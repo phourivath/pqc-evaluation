@@ -372,9 +372,9 @@ function Dashboard() {
 
 				<section className="kpi-grid" aria-label="Evaluation summary">
 					<Kpi
-						label="Implementations"
-						value={new Set(rows.map((row) => row.implementationId)).size}
-						detail="latest provider results"
+						label="Provider surfaces"
+						value={new Set(rows.map(providerSurfaceKey)).size}
+						detail="latest normalized results"
 					/>
 					<Kpi
 						label="Coverage"
@@ -431,8 +431,8 @@ function Dashboard() {
 							<div className="section-kicker">Normalized result set</div>
 							<h2 id="comparison-heading">Latest comparison</h2>
 							<p className="section-description">
-								One row per provider and parameter set. Repeated runs collapse
-								to the most recent result. Select a row for check and
+								One row per provider surface and parameter set. Repeated runs
+								collapse to the most recent result. Select a row for check and
 								representation details.
 							</p>
 						</div>
@@ -959,11 +959,15 @@ function ResultSummary({
 function latestRows(rows: ComparisonRow[]) {
 	const latest = new Map<string, ComparisonRow>()
 	for (const row of rows) {
-		const key = `${row.implementationId}:${row.parameterSet}`
+		const key = `${providerSurfaceKey(row)}:${row.parameterSet}`
 		const current = latest.get(key)
 		if (!current || row.generatedAt > current.generatedAt) latest.set(key, row)
 	}
 	return [...latest.values()]
+}
+
+function providerSurfaceKey(row: ComparisonRow) {
+	return `${row.implementationId}:${row.implementationName}:${row.implementationVersion}`
 }
 
 function latestExecutionsByRunner(executions: RunnerExecution[]) {

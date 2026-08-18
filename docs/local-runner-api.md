@@ -12,6 +12,7 @@ Build the contract and isolated runner artifacts first:
 ./mvnw -pl evaluation-contract -am install -DskipTests
 mvn -f runners/java/jdk25/pom.xml package
 mvn -f runners/java/bc-base/pom.xml package
+mvn -f runners/kotlin/bc-kotlin/pom.xml package
 mvn -f runners/java/bc-lts/pom.xml package
 ./mvnw -pl app spring-boot:run
 ```

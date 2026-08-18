@@ -9,6 +9,7 @@ dependencies must not be added to `app` or the root Maven reactor.
 | --- | --- | --- | --- |
 | `java/jdk25` | JDK SUN ML-DSA | Java 25 | executable |
 | `java/bc-base` | Bouncy Castle Base | 1.85.2 | executable |
+| `kotlin/bc-kotlin` | Bouncy Castle Java ML-DSA through Kotlin/JVM | 1.85.2 | executable |
 | `java/bc-lts` | Bouncy Castle LTS | 2.73.12.1 | executable |
 | `bc-fips` | Bouncy Castle FIPS | 2.1.3 | gated; stable artifact has no ML-DSA |
 
@@ -24,6 +25,7 @@ Install the shared contract, then build each runner from its own Maven root:
 ./mvnw -pl evaluation-contract -am install -DskipTests
 mvn -f runners/java/jdk25/pom.xml package
 mvn -f runners/java/bc-base/pom.xml package
+mvn -f runners/kotlin/bc-kotlin/pom.xml package
 mvn -f runners/java/bc-lts/pom.xml package
 ```
 
@@ -40,6 +42,9 @@ java -jar runners/java/jdk25/target/jdk25-runner-0.0.1-SNAPSHOT.jar \
 java -jar runners/java/bc-base/target/bc-base-runner-0.0.1-SNAPSHOT.jar \
   runners/java/bc-base/target/evaluation-result.json
 
+java -jar runners/kotlin/bc-kotlin/target/bc-kotlin-runner-0.0.1-SNAPSHOT.jar \
+  runners/kotlin/bc-kotlin/target/evaluation-result.json
+
 java -jar runners/java/bc-lts/target/bc-lts-runner-0.0.1-SNAPSHOT.jar \
   runners/java/bc-lts/target/evaluation-result.json
 ```
@@ -47,6 +52,9 @@ java -jar runners/java/bc-lts/target/bc-lts-runner-0.0.1-SNAPSHOT.jar \
 Each invocation evaluates ML-DSA-44, ML-DSA-65, and ML-DSA-87, so one result
 document contains three parameter-set observations. The application projects
 one comparison row per parameter set.
+
+The Kotlin runner is Kotlin source calling the BC Java JCA provider directly. It
+does not package or build the separate upstream `bc-kotlin` adapter.
 
 ## Dashboard Execution
 

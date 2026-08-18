@@ -40,6 +40,18 @@ public class RunnerCatalog {
                     null,
                     root.resolve("runners/java/bc-base/target/bc-base-runner-0.0.1-SNAPSHOT.jar"),
                     PARAMETER_SETS),
+            "bc-kotlin",
+                new RunnerDefinition(
+                    "bc-kotlin",
+                    "Bouncy Castle Base ML-DSA (Kotlin/JVM)",
+                    "bc-ml-dsa",
+                    "1.85.2",
+                    "bouncycastle-java",
+                    "IMPLEMENTED",
+                    null,
+                    root.resolve(
+                        "runners/kotlin/bc-kotlin/target/bc-kotlin-runner-0.0.1-SNAPSHOT.jar"),
+                    PARAMETER_SETS),
             "bc-lts",
                 new RunnerDefinition(
                     "bc-lts",

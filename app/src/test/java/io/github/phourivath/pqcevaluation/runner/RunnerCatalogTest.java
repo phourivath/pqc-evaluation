@@ -19,7 +19,17 @@ class RunnerCatalogTest {
 
     assertThat(descriptors)
         .extracting(RunnerDescriptor::id)
-        .containsExactly("bc-base", "bc-fips", "bc-lts", "jdk25");
+        .containsExactly("bc-base", "bc-fips", "bc-kotlin", "bc-lts", "jdk25");
+    assertThat(descriptors)
+        .filteredOn(descriptor -> descriptor.id().equals("bc-kotlin"))
+        .singleElement()
+        .satisfies(
+            descriptor -> {
+              assertThat(descriptor.implementationId()).isEqualTo("bc-ml-dsa");
+              assertThat(descriptor.engineLineageId()).isEqualTo("bouncycastle-java");
+              assertThat(descriptor.executionSupported()).isFalse();
+              assertThat(descriptor.reason()).contains("Build the isolated runner artifact");
+            });
     assertThat(
             descriptors.stream()
                 .filter(descriptor -> descriptor.id().equals("bc-fips"))
