@@ -29,6 +29,7 @@
     </properties>
 
     <modules>
+        <module>evaluation-contract</module>
         <module>app</module>
     </modules>
 

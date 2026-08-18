@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pqc-evaluation.dev/schema/evaluation-result-1.json",
+  "title": "PQC Evaluation Result",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "generatedAt", "implementation", "runtime", "parameterSets", "checks", "interoperability", "warnings"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "runId": {"type": "string", "minLength": 1},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "implementation": {"$ref": "#/$defs/implementation"},
+    "runtime": {"$ref": "#/$defs/runtime"},
+    "parameterSets": {"type": "array", "items": {"$ref": "#/$defs/parameterSet"}},
+    "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "interoperability": {"type": "array", "items": {"$ref": "#/$defs/interop"}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "implementation": {
+      "type": "object",
+      "required": ["id", "displayName", "version", "engineLineageId", "distribution", "license", "assuranceStatus"],
+      "properties": {
+        "id": {"type": "string"},
+        "displayName": {"type": "string"},
+        "version": {"type": "string"},
+        "engineLineageId": {"type": "string"},
+        "distribution": {"type": "string"},
+        "license": {"type": "string"},
+        "assuranceStatus": {"type": "string"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["javaVersion", "javaVendor", "osName", "osVersion", "architecture", "buildProperties"],
+      "properties": {
+        "javaVersion": {"type": "string"},
+        "javaVendor": {"type": "string"},
+        "osName": {"type": "string"},
+        "osVersion": {"type": "string"},
+        "architecture": {"type": "string"},
+        "buildProperties": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "parameterSet": {
+      "type": "object",
+      "required": ["parameterSet", "securityLevel", "rawPublicKeyBytes", "rawPrivateSeedBytes", "rawPrivateExpandedBytes", "rawSignatureBytes", "capabilities", "representations"],
+      "properties": {
+        "parameterSet": {"enum": ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"]},
+        "securityLevel": {"type": "integer", "enum": [2, 3, 5]},
+        "rawPublicKeyBytes": {"type": "integer", "minimum": 1},
+        "rawPrivateSeedBytes": {"type": "integer", "minimum": 1},
+        "rawPrivateExpandedBytes": {"type": "integer", "minimum": 1},
+        "rawSignatureBytes": {"type": "integer", "minimum": 1},
+        "capabilities": {"type": "array"},
+        "representations": {"type": "array"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["id", "parameterSet", "category", "status", "message"],
+      "properties": {
+        "id": {"type": "string"},
+        "parameterSet": {"type": "string"},
+        "category": {"type": "string"},
+        "status": {"enum": ["pass", "fail", "error", "skipped", "unsupported"]},
+        "message": {"type": "string"}
+      }
+    },
+    "interop": {
+      "type": "object",
+      "required": ["producer", "consumer", "parameterSet", "mode", "status", "message"],
+      "properties": {
+        "producer": {"type": "string"},
+        "consumer": {"type": "string"},
+        "parameterSet": {"type": "string"},
+        "mode": {"type": "string"},
+        "status": {"enum": ["pass", "fail", "unsupported"]},
+        "message": {"type": "string"}
+      }
+    }
+  }
+}

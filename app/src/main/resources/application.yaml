@@ -1,3 +1,16 @@
 spring:
   application:
     name: pqc-evaluation
+
+server:
+  address: 127.0.0.1
+
+pqc:
+  runner-execution:
+    enabled: true
+    runner-root: ${PQC_RUNNER_ROOT:${user.dir}}
+    execution-root: ${PQC_EXECUTION_ROOT:${java.io.tmpdir}/pqc-evaluation-executions}
+    max-concurrent: 1
+    queue-capacity: 8
+    timeout: 2m
+    max-result-bytes: 1048576
