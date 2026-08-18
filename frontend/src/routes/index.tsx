@@ -254,13 +254,14 @@ function Dashboard() {
 			].some((value) => value.toLowerCase().includes(searchText))
 		const matchesParameter =
 			parameterSet === "all" || row.parameterSet === parameterSet
+		const hasFailedChecks = row.checksFailed > 0 || row.interopFailed > 0
+		const hasUnsupportedChecks =
+			row.checksUnsupported > 0 || row.interopUnsupported > 0
 		const matchesOutcome =
 			outcome === "all" ||
-			(outcome === "attention" && row.checksFailed > 0) ||
-			(outcome === "unsupported" && row.checksUnsupported > 0) ||
-			(outcome === "passing" &&
-				row.checksFailed === 0 &&
-				row.checksUnsupported === 0)
+			(outcome === "attention" && hasFailedChecks) ||
+			(outcome === "unsupported" && hasUnsupportedChecks) ||
+			(outcome === "passing" && !hasFailedChecks && !hasUnsupportedChecks)
 		return matchesSearch && matchesParameter && matchesOutcome
 	})
 	const table = useTable({

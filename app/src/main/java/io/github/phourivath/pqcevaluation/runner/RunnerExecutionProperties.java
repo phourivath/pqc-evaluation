@@ -13,7 +13,8 @@ public record RunnerExecutionProperties(
     int maxConcurrent,
     int queueCapacity,
     Duration timeout,
-    long maxResultBytes) {
+    long maxResultBytes,
+    int maxRetainedExecutions) {
 
   public RunnerExecutionProperties {
     if (maxConcurrent < 1 || queueCapacity < 1 || timeout.isNegative() || timeout.isZero()) {
@@ -21,6 +22,9 @@ public record RunnerExecutionProperties(
     }
     if (maxResultBytes < 1) {
       throw new IllegalArgumentException("maxResultBytes must be positive");
+    }
+    if (maxRetainedExecutions < 1) {
+      throw new IllegalArgumentException("maxRetainedExecutions must be positive");
     }
   }
 }

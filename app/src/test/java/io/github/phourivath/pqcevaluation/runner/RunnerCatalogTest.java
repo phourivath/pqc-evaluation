@@ -13,7 +13,7 @@ class RunnerCatalogTest {
     var root = Files.createTempDirectory("runner-catalog");
     var properties =
         new RunnerExecutionProperties(
-            true, root, root.resolve("executions"), 1, 1, Duration.ofSeconds(1), 1024);
+            true, root, root.resolve("executions"), 1, 1, Duration.ofSeconds(1), 1024, 50);
 
     var descriptors = new RunnerCatalog(properties).descriptors();
 

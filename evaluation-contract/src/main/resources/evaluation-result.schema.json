@@ -51,8 +51,34 @@
         "rawPrivateSeedBytes": {"type": "integer", "minimum": 1},
         "rawPrivateExpandedBytes": {"type": "integer", "minimum": 1},
         "rawSignatureBytes": {"type": "integer", "minimum": 1},
-        "capabilities": {"type": "array"},
-        "representations": {"type": "array"}
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capability"}},
+        "representations": {"type": "array", "items": {"$ref": "#/$defs/representation"}}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["operation", "status", "origin", "evidence"],
+      "properties": {
+        "operation": {"type": "string", "minLength": 1},
+        "status": {"enum": ["supported", "unsupported"]},
+        "origin": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "representation": {
+      "type": "object",
+      "required": ["kind", "status", "origin"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "fail", "unsupported"]},
+        "byteLength": {"type": ["integer", "null"], "minimum": 0},
+        "sha256": {"type": ["string", "null"]},
+        "algorithmOid": {"type": ["string", "null"]},
+        "parametersAbsent": {"type": ["boolean", "null"]},
+        "privateChoice": {"type": ["string", "null"]},
+        "origin": {"type": "string", "minLength": 1},
+        "reason": {"type": ["string", "null"]}
       }
     },
     "check": {

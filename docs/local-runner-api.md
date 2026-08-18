@@ -48,4 +48,6 @@ workspace, a bounded heap, and a hard timeout. Provider libraries stay inside
 their runner JVMs and never enter the Spring Boot application classpath.
 
 Execution state and imported results are currently in memory and disappear
-when the application restarts.
+when the application restarts. Terminal execution history is bounded by
+`pqc.runner-execution.max-retained-executions` (50 by default), and each
+completed execution workspace is removed after its result is processed.

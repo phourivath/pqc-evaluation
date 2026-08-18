@@ -192,6 +192,29 @@ public class EvaluationRunService {
       throw new EvaluationRunException(
           "Normative size mismatch for " + parameterSet.parameterSet());
     }
+    for (var capability : parameterSet.capabilities()) {
+      if (capability == null
+          || isBlank(capability.operation())
+          || isBlank(capability.status())
+          || !SetOfStatuses.CAPABILITY.contains(capability.status())
+          || isBlank(capability.origin())
+          || isBlank(capability.evidence())) {
+        throw new EvaluationRunException("Invalid capability definition");
+      }
+    }
+    for (var representation : parameterSet.representations()) {
+      if (representation == null
+          || isBlank(representation.kind())
+          || isBlank(representation.status())
+          || !SetOfStatuses.REPRESENTATION.contains(representation.status())
+          || isBlank(representation.origin())
+          || (representation.byteLength() != null && representation.byteLength() < 0)
+          || (representation.sha256() != null && isBlank(representation.sha256()))
+          || (representation.algorithmOid() != null && isBlank(representation.algorithmOid()))
+          || (representation.privateChoice() != null && isBlank(representation.privateChoice()))) {
+        throw new EvaluationRunException("Invalid representation definition");
+      }
+    }
   }
 
   private static boolean isBlank(String value) {
@@ -229,9 +252,13 @@ public class EvaluationRunService {
       int securityLevel, int publicBytes, int seedBytes, int privateBytes, int signatureBytes) {}
 
   private static final class SetOfStatuses {
+    private static final java.util.Set<String> CAPABILITY =
+        java.util.Set.of("supported", "unsupported");
     private static final java.util.Set<String> CHECK =
         java.util.Set.of("pass", "fail", "error", "skipped", "unsupported");
     private static final java.util.Set<String> INTEROP =
+        java.util.Set.of("pass", "fail", "unsupported");
+    private static final java.util.Set<String> REPRESENTATION =
         java.util.Set.of("pass", "fail", "unsupported");
 
     private SetOfStatuses() {}

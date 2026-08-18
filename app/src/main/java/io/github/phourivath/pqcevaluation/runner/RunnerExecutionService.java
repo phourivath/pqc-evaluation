@@ -6,6 +6,7 @@ import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
@@ -27,6 +28,8 @@ public class RunnerExecutionService {
 
   private static final Map<String, String> TERMINAL_FAILURES =
       Map.of("FAILED", "Runner process failed", "TIMED_OUT", "Runner exceeded its timeout");
+  private static final long OUTPUT_CHECK_INTERVAL_MILLIS = 50;
+  private static final long PROCESS_GRACE_SECONDS = 2;
 
   private final RunnerExecutionProperties properties;
   private final RunnerCatalog catalog;
@@ -36,6 +39,7 @@ public class RunnerExecutionService {
   private final Map<UUID, MutableExecution> executions = new ConcurrentHashMap<>();
   private final java.util.Set<String> activeRunners = ConcurrentHashMap.newKeySet();
   private final String serverAddress;
+  private volatile boolean shuttingDown;
 
   public RunnerExecutionService(
       RunnerExecutionProperties properties,
@@ -82,7 +86,7 @@ public class RunnerExecutionService {
     var execution = new MutableExecution(UUID.randomUUID(), runnerId);
     executions.put(execution.id, execution);
     try {
-      execution.future = executor.submit(() -> execute(execution, definition));
+      execution.setFuture(executor.submit(() -> execute(execution, definition)));
       return execution.snapshot();
     } catch (RuntimeException exception) {
       executions.remove(execution.id);
@@ -104,27 +108,62 @@ public class RunnerExecutionService {
     if (execution == null) {
       throw RunnerExecutionException.notFound("Unknown runner execution: " + executionId);
     }
-    execution.cancel();
+    execution.requestCancellation();
+    terminateProcess(execution.currentProcess());
     var snapshot = execution.snapshot();
     if ("CANCELLED".equals(snapshot.status())) {
       activeRunners.remove(snapshot.runnerId());
+      pruneExecutions();
     }
     return snapshot;
   }
 
   @PreDestroy
   void shutdown() {
+    shuttingDown = true;
+    var executionsAtShutdown = List.copyOf(executions.values());
+    executionsAtShutdown.forEach(
+        execution -> {
+          execution.requestCancellation();
+          terminateProcess(execution.currentProcess());
+        });
     executor.shutdownNow();
+    executionsAtShutdown.forEach(
+        execution -> {
+          terminateProcess(execution.currentProcess());
+          if (execution.currentProcess() == null && execution.isNonTerminal()) {
+            execution.finish(
+                "CANCELLED", null, null, "Execution interrupted by application shutdown");
+          }
+        });
+    try {
+      if (!executor.awaitTermination(PROCESS_GRACE_SECONDS + 3, TimeUnit.SECONDS)) {
+        executor.shutdownNow();
+      }
+    } catch (InterruptedException exception) {
+      executor.shutdownNow();
+      executionsAtShutdown.forEach(execution -> terminateProcess(execution.currentProcess()));
+      Thread.currentThread().interrupt();
+    } finally {
+      activeRunners.clear();
+    }
   }
 
   private void execute(MutableExecution execution, RunnerDefinition definition) {
-    Path output = null;
+    Path workspace = null;
     try {
-      execution.markStarting();
-      var workspace =
+      if (!execution.markStarting()) {
+        execution.finish("CANCELLED", null, null, "Execution cancelled");
+        return;
+      }
+      workspace =
           properties.executionRoot().toAbsolutePath().normalize().resolve(execution.id.toString());
       Files.createDirectories(workspace);
-      output = workspace.resolve("evaluation-result.json");
+      var output = workspace.resolve("evaluation-result.json");
+      if (execution.isCancellationRequested()) {
+        execution.finish("CANCELLED", null, null, "Execution cancelled");
+        return;
+      }
       var javaExecutable =
           Path.of(System.getProperty("java.home"), "bin", "java").toAbsolutePath().normalize();
       if (!Files.isRegularFile(javaExecutable)) {
@@ -144,49 +183,183 @@ public class RunnerExecutionService {
               .redirectOutput(ProcessBuilder.Redirect.DISCARD)
               .redirectError(ProcessBuilder.Redirect.PIPE);
       var process = processBuilder.start();
-      execution.markRunning(process);
+      if (!execution.markRunning(process)) {
+        terminateProcess(process);
+      }
       var errorDrainer = drain(process);
-      var finished = process.waitFor(properties.timeout().toMillis(), TimeUnit.MILLISECONDS);
-      if (!finished) {
-        process.destroy();
-        if (!process.waitFor(2, TimeUnit.SECONDS)) {
-          process.destroyForcibly();
+      var waitResult = waitForProcess(process, output);
+      if (waitResult == ProcessWaitResult.RESULT_TOO_LARGE) {
+        terminateProcess(process);
+        errorDrainer.join(1000);
+        execution.finish(
+            "FAILED", exitCode(process), null, "Runner result exceeded the configured size limit");
+        return;
+      }
+      if (waitResult == ProcessWaitResult.TIMED_OUT) {
+        terminateProcess(process);
+        errorDrainer.join(1000);
+        if (execution.isCancellationRequested()) {
+          execution.finish("CANCELLED", exitCode(process), null, "Execution cancelled");
+        } else {
+          execution.finish(
+              "TIMED_OUT", exitCode(process), null, TERMINAL_FAILURES.get("TIMED_OUT"));
         }
-        execution.finish("TIMED_OUT", null, null, TERMINAL_FAILURES.get("TIMED_OUT"));
         return;
       }
       errorDrainer.join(1000);
-      if (execution.cancelRequested) {
-        execution.finish("CANCELLED", process.exitValue(), null, "Execution cancelled");
+      if (execution.isCancellationRequested()) {
+        execution.finish("CANCELLED", exitCode(process), null, "Execution cancelled");
         return;
       }
-      var exitCode = process.exitValue();
-      if (exitCode != 0) {
-        execution.finish("FAILED", exitCode, null, TERMINAL_FAILURES.get("FAILED"));
+      var processExitCode = process.exitValue();
+      if (processExitCode != 0) {
+        execution.finish("FAILED", processExitCode, null, TERMINAL_FAILURES.get("FAILED"));
         return;
       }
       if (Files.isSymbolicLink(output)
-          || !Files.isRegularFile(output)
+          || !Files.isRegularFile(output, LinkOption.NOFOLLOW_LINKS)
           || Files.size(output) > properties.maxResultBytes()) {
-        execution.finish("FAILED", exitCode, null, "Runner result was missing or too large");
+        execution.finish("FAILED", processExitCode, null, "Runner result was missing or too large");
+        return;
+      }
+      if (execution.isCancellationRequested()) {
+        execution.finish("CANCELLED", processExitCode, null, "Execution cancelled");
         return;
       }
       var result = objectMapper.readValue(output, EvaluationResult.class);
       if (!definition.implementationId().equals(result.implementation().id())) {
         execution.finish(
-            "FAILED", exitCode, null, "Runner identity did not match its catalog entry");
+            "FAILED", processExitCode, null, "Runner identity did not match its catalog entry");
+        return;
+      }
+      if (execution.isCancellationRequested()) {
+        execution.finish("CANCELLED", processExitCode, null, "Execution cancelled");
         return;
       }
       evaluationRunService.importRun(result);
       execution.finish(
-          "SUCCEEDED", exitCode, result.runId(), "/api/v1/evaluation-runs/" + result.runId());
+          "SUCCEEDED",
+          processExitCode,
+          result.runId(),
+          "/api/v1/evaluation-runs/" + result.runId());
     } catch (InterruptedException exception) {
+      terminateProcess(execution.currentProcess());
       Thread.currentThread().interrupt();
       execution.finish("CANCELLED", null, null, "Execution interrupted");
     } catch (Exception exception) {
+      terminateProcess(execution.currentProcess());
       execution.finish("FAILED", null, null, "Runner result could not be imported");
     } finally {
+      terminateProcess(execution.currentProcess());
+      deleteWorkspace(workspace);
       activeRunners.remove(execution.runnerId);
+      pruneExecutions();
+    }
+  }
+
+  private ProcessWaitResult waitForProcess(Process process, Path output)
+      throws InterruptedException, IOException {
+    var deadline = System.nanoTime() + properties.timeout().toNanos();
+    while (process.isAlive()) {
+      if (resultExceedsLimit(output)) {
+        return ProcessWaitResult.RESULT_TOO_LARGE;
+      }
+      var remaining = deadline - System.nanoTime();
+      if (remaining <= 0) {
+        return ProcessWaitResult.TIMED_OUT;
+      }
+      var waitNanos =
+          Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(OUTPUT_CHECK_INTERVAL_MILLIS));
+      if (process.waitFor(waitNanos, TimeUnit.NANOSECONDS)) {
+        return ProcessWaitResult.FINISHED;
+      }
+    }
+    return ProcessWaitResult.FINISHED;
+  }
+
+  private boolean resultExceedsLimit(Path output) throws IOException {
+    if (Files.isSymbolicLink(output)) {
+      return true;
+    }
+    if (!Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+      return false;
+    }
+    return !Files.isRegularFile(output, LinkOption.NOFOLLOW_LINKS)
+        || Files.size(output) > properties.maxResultBytes();
+  }
+
+  private void pruneExecutions() {
+    var completed =
+        executions.values().stream()
+            .filter(MutableExecution::isTerminal)
+            .sorted(Comparator.comparing(execution -> execution.submittedAt))
+            .toList();
+    var excess = completed.size() - properties.maxRetainedExecutions();
+    for (var index = 0; index < excess; index++) {
+      var execution = completed.get(index);
+      executions.remove(execution.id, execution);
+    }
+  }
+
+  private static void terminateProcess(Process process) {
+    if (process == null || !process.isAlive()) {
+      return;
+    }
+    destroyProcessTree(process, false);
+    try {
+      if (!process.waitFor(PROCESS_GRACE_SECONDS, TimeUnit.SECONDS)) {
+        destroyProcessTree(process, true);
+        process.waitFor(PROCESS_GRACE_SECONDS, TimeUnit.SECONDS);
+      }
+    } catch (InterruptedException exception) {
+      destroyProcessTree(process, true);
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private static void destroyProcessTree(Process process, boolean forcibly) {
+    process
+        .descendants()
+        .forEach(
+            descendant -> {
+              if (forcibly) {
+                descendant.destroyForcibly();
+              } else {
+                descendant.destroy();
+              }
+            });
+    if (forcibly) {
+      process.destroyForcibly();
+    } else {
+      process.destroy();
+    }
+  }
+
+  private static void deleteWorkspace(Path workspace) {
+    if (workspace == null) {
+      return;
+    }
+    try (var paths = Files.walk(workspace)) {
+      paths
+          .sorted(Comparator.reverseOrder())
+          .forEach(
+              path -> {
+                try {
+                  Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                  // Cleanup must not replace the execution result.
+                }
+              });
+    } catch (IOException ignored) {
+      // Cleanup must not replace the execution result.
+    }
+  }
+
+  private static Integer exitCode(Process process) {
+    try {
+      return process.exitValue();
+    } catch (IllegalThreadStateException exception) {
+      return null;
     }
   }
 
@@ -207,10 +380,19 @@ public class RunnerExecutionService {
     if (!properties.enabled()) {
       throw RunnerExecutionException.disabled();
     }
+    if (shuttingDown) {
+      throw RunnerExecutionException.unavailable("Runner execution is shutting down");
+    }
     if (!"127.0.0.1".equals(serverAddress) && !"::1".equals(serverAddress)) {
       throw RunnerExecutionException.unavailable(
           "Runner execution requires a loopback server address");
     }
+  }
+
+  private enum ProcessWaitResult {
+    FINISHED,
+    TIMED_OUT,
+    RESULT_TOO_LARGE
   }
 
   private static final class MutableExecution {
@@ -233,37 +415,84 @@ public class RunnerExecutionService {
       this.runnerId = runnerId;
     }
 
-    private void markStarting() {
+    private synchronized void setFuture(Future<?> future) {
+      this.future = future;
+      if (cancelRequested) {
+        future.cancel(false);
+      }
+    }
+
+    private synchronized boolean markStarting() {
+      if (cancelRequested || isTerminal()) {
+        if (!isTerminal()) {
+          status = "CANCELLING";
+        }
+        return false;
+      }
       status = "STARTING";
       startedAt = Instant.now();
+      return true;
     }
 
-    private void markRunning(Process process) {
+    private synchronized boolean markRunning(Process process) {
       this.process = process;
+      if (cancelRequested || isTerminal()) {
+        if (!isTerminal()) {
+          status = "CANCELLING";
+        }
+        return false;
+      }
       status = "RUNNING";
+      return true;
     }
 
-    private void cancel() {
+    private synchronized void requestCancellation() {
+      if (isTerminal()) {
+        return;
+      }
       cancelRequested = true;
-      var current = process;
-      if (current == null && "QUEUED".equals(status) && future != null && future.cancel(false)) {
+      if ("QUEUED".equals(status) && future != null && future.cancel(false)) {
         status = "CANCELLED";
         finishedAt = Instant.now();
         return;
       }
-      if (current != null && current.isAlive()) {
-        status = "CANCELLING";
-        current.destroy();
-      }
+      status = "CANCELLING";
     }
 
-    private void finish(String status, Integer exitCode, String resultRunId, String value) {
+    private boolean isCancellationRequested() {
+      return cancelRequested;
+    }
+
+    private Process currentProcess() {
+      return process;
+    }
+
+    private synchronized void finish(
+        String status, Integer exitCode, String resultRunId, String value) {
+      if (isTerminal()) {
+        return;
+      }
       this.status = status;
       this.exitCode = exitCode;
       this.resultRunId = resultRunId;
       this.resultUrl = resultRunId == null ? null : value;
       this.failure = resultRunId == null ? value : null;
       this.finishedAt = Instant.now();
+    }
+
+    private boolean isTerminal() {
+      return isTerminal(status);
+    }
+
+    private boolean isNonTerminal() {
+      return !isTerminal();
+    }
+
+    private static boolean isTerminal(String status) {
+      return "SUCCEEDED".equals(status)
+          || "FAILED".equals(status)
+          || "TIMED_OUT".equals(status)
+          || "CANCELLED".equals(status);
     }
 
     private RunnerExecutionSnapshot snapshot() {

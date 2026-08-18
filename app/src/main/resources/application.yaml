@@ -14,3 +14,4 @@ pqc:
     queue-capacity: 8
     timeout: 2m
     max-result-bytes: 1048576
+    max-retained-executions: 50

@@ -129,6 +129,14 @@ public final class BouncyCastleRunner {
         Arrays.equals(rawPublic, importedPublic.getPublicData())
             && Arrays.equals(rawSeed, importedPrivate.getSeed())
             && Arrays.equals(rawExpanded, importedPrivate.getPrivateData());
+    var expectedOid = oid(parameters.name());
+    var spkiAlgorithm = Der.algorithmIdentifier(spki, false);
+    var pkcs8Algorithm = Der.algorithmIdentifier(pkcs8, true);
+    var spkiAlgorithmValid =
+        expectedOid.equals(spkiAlgorithm.oid()) && spkiAlgorithm.parametersAbsent();
+    var pkcs8AlgorithmValid =
+        expectedOid.equals(pkcs8Algorithm.oid()) && pkcs8Algorithm.parametersAbsent();
+    var algorithmIdentifierValid = spkiAlgorithmValid && pkcs8AlgorithmValid;
 
     var contextSupported = false;
     String contextMessage;
@@ -187,9 +195,24 @@ public final class BouncyCastleRunner {
     checks.add(
         check(
             parameters.name(),
+            "algorithm-identifier",
+            "encoding",
+            algorithmIdentifierValid ? "pass" : "fail",
+            "SPKI OID "
+                + spkiAlgorithm.oid()
+                + " (parameters "
+                + (spkiAlgorithm.parametersAbsent() ? "absent" : "present")
+                + "), PKCS#8 OID "
+                + pkcs8Algorithm.oid()
+                + " (parameters "
+                + (pkcs8Algorithm.parametersAbsent() ? "absent" : "present")
+                + ")"));
+    checks.add(
+        check(
+            parameters.name(),
             "standard-key-round-trip",
             "encoding",
-            roundTrip ? "pass" : "fail",
+            roundTrip && algorithmIdentifierValid ? "pass" : "fail",
             "SPKI and PKCS#8 preserve raw key material"));
     checks.add(
         check(
@@ -221,18 +244,17 @@ public final class BouncyCastleRunner {
                 "native-api",
                 "ContextParameterSpec",
                 contextSupported ? null : contextMessage));
-    var parametersAbsent = Der.algorithmParametersAbsent(spki);
     var pkcs8PrivateChoice = Der.privateChoice(pkcs8);
     var representations =
         List.of(
-            new Representation(
-                "raw-public",
-                "pass",
-                rawPublic.length,
-                sha256(rawPublic),
-                oid(parameters.name()),
-                null,
-                null,
+             new Representation(
+                 "raw-public",
+                 "pass",
+                 rawPublic.length,
+                 sha256(rawPublic),
+                 null,
+                 null,
+                 null,
                 "native-api",
                 null),
             new Representation(
@@ -255,23 +277,23 @@ public final class BouncyCastleRunner {
                 "expandedKey",
                 "native-api",
                 "Private bytes are not retained in the result"),
-            new Representation(
-                "spki",
-                "pass",
-                spki.length,
-                sha256(spki),
-                oid(parameters.name()),
-                parametersAbsent,
-                null,
-                "standard-container",
-                null),
-            new Representation(
-                "pkcs8",
-                "pass",
-                pkcs8.length,
+             new Representation(
+                 "spki",
+                 spkiAlgorithmValid ? "pass" : "fail",
+                 spki.length,
+                 sha256(spki),
+                 spkiAlgorithm.oid(),
+                 spkiAlgorithm.parametersAbsent(),
+                 null,
+                 "standard-container",
+                 null),
+             new Representation(
+                 "pkcs8",
+                 pkcs8AlgorithmValid ? "pass" : "fail",
+                 pkcs8.length,
                  sha256(pkcs8),
-                 oid(parameters.name()),
-                 parametersAbsent,
+                 pkcs8Algorithm.oid(),
+                 pkcs8Algorithm.parametersAbsent(),
                  pkcs8PrivateChoice,
                  "standard-container",
                  null));
@@ -314,11 +336,45 @@ public final class BouncyCastleRunner {
   private static final class Der {
     private Der() {}
 
-    static boolean algorithmParametersAbsent(byte[] encoded) {
+    static AlgorithmIdentifier algorithmIdentifier(byte[] encoded, boolean pkcs8) {
       var outer = read(encoded, 0);
-      var algorithm = read(encoded, outer.valueStart());
+      var algorithmOffset =
+          pkcs8 ? read(encoded, outer.valueStart()).nextOffset() : outer.valueStart();
+      var algorithm = read(encoded, algorithmOffset);
       var oid = read(encoded, algorithm.valueStart());
-      return oid.nextOffset() == algorithm.nextOffset();
+      if (algorithm.tag() != 0x30 || oid.tag() != 0x06) {
+        throw new IllegalArgumentException("Invalid AlgorithmIdentifier");
+      }
+      return new AlgorithmIdentifier(
+          objectIdentifier(encoded, oid), oid.nextOffset() == algorithm.nextOffset());
+    }
+
+    private static String objectIdentifier(byte[] encoded, Tlv value) {
+      var first = readOidComponent(encoded, value.valueStart(), value.nextOffset());
+      var firstArc = first.value() < 40 ? 0 : first.value() < 80 ? 1 : 2;
+      var builder = new StringBuilder(firstArc + "." + (first.value() - firstArc * 40L));
+      var offset = first.nextOffset();
+      while (offset < value.nextOffset()) {
+        var component = readOidComponent(encoded, offset, value.nextOffset());
+        builder.append('.').append(component.value());
+        offset = component.nextOffset();
+      }
+      return builder.toString();
+    }
+
+    private static OidComponent readOidComponent(byte[] encoded, int offset, int end) {
+      var value = 0L;
+      while (offset < end) {
+        var part = encoded[offset++] & 0xff;
+        if (value > (Long.MAX_VALUE >>> 7)) {
+          throw new IllegalArgumentException("OID component is too large");
+        }
+        value = (value << 7) | (part & 0x7f);
+        if ((part & 0x80) == 0) {
+          return new OidComponent(value, offset);
+        }
+      }
+      throw new IllegalArgumentException("Truncated object identifier");
     }
 
     static String privateChoice(byte[] encoded) {
@@ -352,6 +408,10 @@ public final class BouncyCastleRunner {
       var valueStart = offset + 2 + lengthBytes;
       return new Tlv(tag, length, valueStart, valueStart + length);
     }
+
+    private record AlgorithmIdentifier(String oid, boolean parametersAbsent) {}
+
+    private record OidComponent(long value, int nextOffset) {}
 
     private record Tlv(int tag, int length, int valueStart, int nextOffset) {}
   }

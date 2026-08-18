@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Capability;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CheckResult;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Implementation;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.ParameterSetResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Representation;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.RuntimeInfo;
 import java.time.Instant;
 import java.util.List;
@@ -98,6 +100,64 @@ class EvaluationRunServiceTest {
     assertThatThrownBy(() -> service.importRun(invalid))
         .isInstanceOf(EvaluationRunException.class)
         .hasMessage("Invalid check definition");
+  }
+
+  @Test
+  void rejectsMalformedCapability() {
+    var result = result("run-capability");
+    var invalid =
+        withParameterSet(
+            result,
+            new ParameterSetResult(
+                "ML-DSA-44",
+                2,
+                1312,
+                32,
+                2560,
+                2420,
+                List.of(new Capability("sign", null, "native-api", "Signature ML-DSA", null)),
+                List.of()));
+
+    assertThatThrownBy(() -> service.importRun(invalid))
+        .isInstanceOf(EvaluationRunException.class)
+        .hasMessage("Invalid capability definition");
+  }
+
+  @Test
+  void rejectsMalformedRepresentation() {
+    var result = result("run-representation");
+    var invalid =
+        withParameterSet(
+            result,
+            new ParameterSetResult(
+                "ML-DSA-44",
+                2,
+                1312,
+                32,
+                2560,
+                2420,
+                List.of(),
+                List.of(
+                    new Representation(
+                        "spki", null, 1, null, null, null, null, "standard-container", null))));
+
+    assertThatThrownBy(() -> service.importRun(invalid))
+        .isInstanceOf(EvaluationRunException.class)
+        .hasMessage("Invalid representation definition");
+  }
+
+  private static EvaluationResult withParameterSet(
+      EvaluationResult result, ParameterSetResult parameterSet) {
+    return new EvaluationResult(
+        result.schemaVersion(),
+        result.runId(),
+        result.generatedAt(),
+        result.implementation(),
+        result.runtime(),
+        List.of(parameterSet),
+        result.checks(),
+        result.interoperability(),
+        result.warnings());
   }
 
   private static EvaluationResult result(String runId) {
