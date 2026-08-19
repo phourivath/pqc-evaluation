@@ -12,6 +12,7 @@ record RunnerDefinition(
     String lifecycle,
     String gatedReason,
     Path artifact,
+    RunnerLaunchKind launchKind,
     List<String> parameterSets) {
 
   boolean executable() {

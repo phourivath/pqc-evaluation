@@ -61,6 +61,13 @@ class EvaluationRunControllerTest {
       }
       """;
 
+  private static final String SWIFT_RESULT =
+      VALID_RESULT
+          .replace("\"schemaVersion\": \"1.0\"", "\"schemaVersion\": \"1.1\"")
+          .replace("\"runId\": \"api-run\"", "\"runId\": \"api-swift-run\"")
+          .replace("        \"javaVersion\": \"25.0.4\",\n", "")
+          .replace("        \"javaVendor\": \"OpenJDK\",\n", "");
+
   @Autowired private MockMvc mockMvc;
 
   @Test
@@ -89,6 +96,17 @@ class EvaluationRunControllerTest {
         .perform(get("/api/v1/comparisons"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].checksPassed").value(1));
+  }
+
+  @Test
+  void importsSwiftResultWithoutJavaRuntimeIdentity() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/evaluation-runs/import")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(SWIFT_RESULT))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.runId").value("api-swift-run"));
   }
 
   @Test

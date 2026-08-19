@@ -1,0 +1,11 @@
+diff --git a/Sources/SwiftDilithium/Dilithium.swift b/Sources/SwiftDilithium/Dilithium.swift
+--- a/Sources/SwiftDilithium/Dilithium.swift
++++ b/Sources/SwiftDilithium/Dilithium.swift
+@@ -35,5 +35,2 @@ public struct Dilithium {
+-        var bytes = Bytes(repeating: 0, count: n)
+-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+-            fatalError("randomBytes failed")
+-        }
+-        return bytes
++        var generator = SystemRandomNumberGenerator()
++        return (0 ..< n).map { _ in UInt8.random(in: .min ... .max, using: &generator) }

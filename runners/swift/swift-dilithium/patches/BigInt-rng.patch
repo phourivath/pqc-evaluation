@@ -1,0 +1,15 @@
+diff --git a/Sources/BigInt/BigInt.swift b/Sources/BigInt/BigInt.swift
+--- a/Sources/BigInt/BigInt.swift
++++ b/Sources/BigInt/BigInt.swift
+@@ -1701,2 +1701,3 @@ public struct BInt: CustomStringConvertible, Comparable, Equatable, Hashable {
+-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+-            fatalError("randomBytes failed")
++        var generator = SystemRandomNumberGenerator()
++        for index in bytes.indices {
++            bytes[index] = UInt8.random(in: .min ... .max, using: &generator)
+@@ -1707,2 +1708,3 @@ public struct BInt: CustomStringConvertible, Comparable, Equatable, Hashable {
+-        guard SecRandomCopyBytes(kSecRandomDefault, 8 * limbs.count, &limbs) == errSecSuccess else {
+-            fatalError("randomLimbs failed")
++        var generator = SystemRandomNumberGenerator()
++        for index in limbs.indices {
++            limbs[index] = generator.next()

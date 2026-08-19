@@ -23,16 +23,27 @@ Use NIST FIPS 204, RFC 9881, NIST ACVP ML-DSA vectors, Wycheproof ML-DSA
 vectors, and the official JDK, Bouncy Castle Java, Bouncy Castle Kotlin,
 RustCrypto `ml-dsa`, `liboqs`, and `liboqs-java` sources. Use current AOSP
 `KeyProperties` and `NamedParameterSpec` sources when recording Android
-platform availability. Record source revisions and hashes with fixtures.
+platform availability. For the Apple phase, use the official CryptoKit API
+and availability documentation, Apple `swift-crypto`, SwiftDilithium, and
+`liboqs-swift` sources. Record source revisions, package versions, licenses,
+and hashes with fixtures. The primary references are
+`https://csrc.nist.gov/pubs/fips/204/final`,
+`https://www.rfc-editor.org/rfc/rfc9881.html`,
+`https://developer.apple.com/documentation/cryptokit/`,
+`https://developer.apple.com/documentation/cryptokit/mldsa65`,
+`https://github.com/apple/swift-crypto`,
+`https://github.com/leif-ibsen/SwiftDilithium`, and
+`https://github.com/DeveloperBeau/liboqs-swift`.
 
 ## 4. Scope
 
 Evaluate key generation, raw and container representations, reconstruction,
 round trips, signing, verification, negative cases, contexts, and
-interoperability for Kotlin/JVM and app-bundled software providers. Include
-runtime and distribution compatibility metadata, but exclude Android Keystore,
-KeyMint, secure hardware, physical-device testing, timing, throughput,
-allocation, memory, and benchmark loops.
+interoperability for Kotlin/JVM, app-bundled software providers, and selected
+Swift/Apple software providers. Include runtime and distribution compatibility
+metadata, but exclude Android Keystore, KeyMint, Secure Enclave, Keychain,
+secure hardware, full iOS applications, physical-device testing, timing,
+throughput, allocation, memory, and benchmark loops.
 
 ## 5. Candidate Matrix
 
@@ -41,7 +52,10 @@ Castle Base 1.85.2, and Bouncy Castle LTS 2.73.12.1. BC FIPS remains gated
 because stable `bc-fips:2.1.3` does not provide ML-DSA. Bouncy Castle Base and
 LTS share the `bouncycastle-java` engine lineage and must not be counted as
 independent cryptographic engines. The Kotlin/Android research matrix and
-selection decisions are in section 21.
+selection decisions are in section 21. The Swift/Apple research matrix and
+selection decisions are in sections 27 through 33. CryptoKit and the default
+Apple-platform `swift-crypto` package path share an engine lineage and must not
+be counted as independent engines.
 
 ## 6. Architecture
 
@@ -50,7 +64,9 @@ selection decisions are in section 21.
 reactor and communicate through files and process exit status. Kotlin runners
 must use the same process and file boundary. Native Android candidates, if
 selected in a later phase, must be packaged per ABI and isolated from all other
-providers.
+providers. SwiftPM runners must also remain independent build roots and must
+not add CryptoKit, SwiftPM, or native provider dependencies to the Maven
+modules. Each Swift distribution is built and executed in its own process.
 
 ## 7. Runner Isolation
 
@@ -61,20 +77,32 @@ allowed. Generated private bytes never enter normalized result files.
 
 Runner adapters expose typed operations for key generation, import/export,
 signing, verification, pure ML-DSA, context ML-DSA, HashML-DSA where available,
-and cleanup. Handles remain opaque to the orchestrator and the backend.
+and cleanup. Handles remain opaque to the orchestrator and the backend. A
+Swift adapter must map the public API boundary faithfully: a missing seed,
+expanded-key, container, context, or HashML-DSA operation is evidence of an
+unsupported capability, not a reason to derive or fabricate a provider API.
 
 ## 9. Result Contract
 
-Result documents use schema version `1.0` and include run metadata, implementation
-lineage, runtime details, parameter-set observations, capabilities,
-representations, checks, interoperability, and warnings. Every capability
-identifies whether evidence came from a native API, a standard container, or an
-evaluator-derived operation. No schema change is justified for the current
-Kotlin/JVM selection. If a future Android result is needed, use
-`runtime.buildProperties` for values such as `runtimeFamily`, `androidApiLevel`,
-`androidRelease`, `abi`, `kotlinVersion`, `ndkVersion`, and native backend. Do
-not invent Java runtime values; revisit the schema only when an Android-specific
-runner is actually selected.
+Result documents currently use schema version `1.0` and include run metadata,
+implementation lineage, runtime details, parameter-set observations,
+capabilities, representations, checks, interoperability, and warnings. Every
+capability identifies whether evidence came from a native API, a standard
+container, or an evaluator-derived operation. The current Java-only runtime
+requirements are valid for the implemented JVM runners, but a Swift result is
+the first selected non-Java runtime and creates a genuine contract boundary.
+
+The Swift plan therefore requires a schema `1.1` revision while retaining
+`1.0` import compatibility. The existing `javaVersion` and `javaVendor`
+fields remain legacy fields and may be omitted or null for a `1.1` Swift
+result; Swift must not fabricate Java values. OS identity remains required, and Swift
+language, Swift tools, SDK, Xcode, deployment target, package revision, and
+native backend values belong in the existing string-valued
+`runtime.buildProperties` map. The application validator must accept both
+versions, requiring non-null Java fields for `1.0` and permitting omitted or
+null legacy Java fields for `1.1`. The open-ended `Representation.kind` field already
+expresses provider-specific forms such as `integrity-checked-private`, so no
+new representation record field is justified.
 
 ## 10. Normative Sizes
 
@@ -136,7 +164,10 @@ Commit a small provenance-tracked set of ACVP key-generation and signature
 vectors, RFC 9881 seed/expanded/both examples, SPKI examples, context boundary
 cases, HashML-DSA vectors where the candidate exposes them, modified
 signatures, malformed lengths, and selected Wycheproof cases. Include Kotlin
-runner and RustCrypto provenance when those candidates are implemented.
+runner and RustCrypto provenance when those candidates are implemented. For
+Swift, record the Apple SDK/Xcode version, Swift toolchain version, package
+revision, vendored native revision where applicable, and the exact vector
+source revision.
 Published private fixtures are test-only and must never be used as credentials.
 
 ## 17. Correctness
@@ -145,7 +176,10 @@ Every runner validates normative lengths, self-sign/verify, deterministic seed
 reconstruction where supported, raw/DER round trips, malformed inputs, wrong
 messages, wrong keys, context limits, ACVP vectors, HashML-DSA vectors where
 supported, and negative verification cases. A provider or wrapper that lacks a
-capability must report `unsupported`, never a zero-valued success.
+capability must report `unsupported`, never a zero-valued success. Swift
+implementations must also test integrity-checked private representations and
+must not compare signatures byte-for-byte when the API does not expose a
+deterministic signing mode.
 
 ## 18. Interoperability
 
@@ -154,13 +188,19 @@ producer-by-consumer matrix is stored in normalized results. Private keys stay
 inside the producing process. BC Base, BC LTS, and the Kotlin runner exchange
 standard containers and signatures only when the underlying provider exposes the
 same encoding. Raw-only native candidates are marked unsupported for container
-interoperability rather than being compared as empty results.
+interoperability rather than being compared as empty results. CryptoKit raw
+keys and signatures may participate in evaluator-derived RFC 9881 container
+tests, but CryptoKit must not be marked as natively importing or exporting SPKI
+or PKCS#8 when its public API does not do so.
 
 ## 19. Backend And Frontend
 
 The API imports validated result documents, deduplicates by `runId`, projects
 comparison rows, returns RFC 9457 errors, and locally launches only fixed
-allowlisted runner JARs. The frontend uses TanStack Query and Table with
+allowlisted runner artifacts. The execution service launches Java JARs and
+native Swift executables through typed fixed command kinds while retaining fixed
+catalog paths, no shell interpolation, result-size limits, timeouts,
+cancellation, and process-tree cleanup. The frontend uses TanStack Query and Table with
 Shadcn UI components to show one latest row per implementation and parameter
 set, runner availability, execution status, raw sizes, lineage, assurance,
 correctness, and interoperability counts.
@@ -173,9 +213,11 @@ phase, with the original validated JSON retained for auditability.
 
 Run the contract and backend Maven tests, build and execute the isolated JDK,
 BC Base, Kotlin, and BC LTS runners, import their results, and run frontend type,
-lint, and build checks. Add native runners, pairwise aggregation, persistent
-storage, and multi-platform CI incrementally. Never turn unsupported or gated
-capabilities into zero-valued successes.
+lint, and build checks. Build SwiftDilithium on Linux or macOS, and build
+CryptoKit on macOS/Xcode 26, then validate schema `1.1`, import their results,
+and verify CryptoKit gating in the runner catalog. Add native runners, pairwise
+aggregation, persistent storage, and multi-platform CI incrementally. Never
+turn unsupported or gated capabilities into zero-valued successes.
 
 ## 21. Kotlin And Android Candidate Matrix
 
@@ -302,19 +344,183 @@ add ABI and runtime smoke coverage, not hardware-backed key testing.
 
 ## 26. Risks And Handoff
 
-The main risks are the upstream BC Kotlin adapter's absence of a released
+The current JVM risks are the upstream BC Kotlin adapter's absence of a released
 artifact and legacy Gradle/Kotlin toolchain, the lack of a documented Android
 API floor for the BC Java distributions, RustCrypto's unaudited status, and the
-native packaging and prototype status of liboqs. BC 1.85.2 release notes include an Android
-compatibility fix for an API below 33, but that is not evidence of a complete
-ML-DSA Android compatibility guarantee. Recheck artifact selection and compile
-compatibility before future adapter implementation.
+native packaging and prototype status of liboqs. BC 1.85.2 release notes include
+an Android compatibility fix for an API below 33, but that is not evidence of a
+complete ML-DSA Android compatibility guarantee.
 
-This phase is complete when the candidate matrix, recommendation and
-exclusions, engine lineage rules, parameter sets, raw/container
-representations, API/runtime/native requirements, evaluator decision, test
-coverage, schema decision, risks, and source references above are preserved in
-this document. The Kotlin/JVM runner integration is the selected implementation
-for this phase; the upstream BC Kotlin adapter remains future work.
+The Swift risks are the macOS 26/Xcode 26 requirement for CryptoKit ML-DSA, the
+absence of a verified CryptoKit ML-DSA-44 API, CryptoKit's lack of native
+SPKI/PKCS#8 interfaces, the default Swift Crypto facade sharing CryptoKit's
+engine lineage, SwiftDilithium's third-party pure-Swift status and pinned
+dependency portability patch, and the Swift 6.3 requirement and prototype
+status of `liboqs-swift`. Recheck artifact selection, deployment targets,
+package licenses, and compile compatibility on the selected Swift hosts before
+selecting any additional runner.
 
-Next phase: Swift and iOS
+This document phase is complete when the candidate matrices, recommendations
+and exclusions, engine lineage rules, parameter sets, raw/container
+representations, API/runtime requirements, evaluator structure, test coverage,
+schema compatibility, packaging constraints, risks, and source references
+below are preserved. The Kotlin/JVM and Swift runner sources are implemented;
+Swift artifact compilation and execution still require the documented host
+toolchains.
+
+## 27. Swift And Apple Candidate Matrix
+
+| Candidate | Current evidence | ML-DSA-44/65/87 | Decision |
+| --- | --- | --- | --- |
+| Apple CryptoKit | Official MLDSA65 and MLDSA87 APIs; Apple platform availability begins at OS 26.0; FIPS 204 raw public and seed APIs | 65/87 only | Primary Apple-platform runner; emit an explicit unsupported ML-DSA-44 capability and never infer an MLDSA44 API |
+| Apple `swift-crypto` 4.5.1 | Revision `47d3869a7291f085c1fb9fb1e6d3b97a793f45c6`; Swift tools 6.1; Apple package path re-exports CryptoKit; vendored BoringSSL commit `0226f30467f540a3f62ef48d453f93927da199b6` is used by its separate forced-build configuration | 65/87 only | Record as an API/distribution surface with `apple-cryptokit` lineage, not as an independent default engine |
+| SwiftDilithium 3.6.0 | Revision `452e507c68879a4a584502e1ef55605efb224e79`; final FIPS 204 implementation; ACVP-server 1.1.0.38 KAT provenance; Wycheproof cases; MIT license | All three | Include as the independent pure-Swift software candidate after Linux/macOS compilation and dependency-license review |
+| `liboqs-swift` 0.16.0 | Revision `5f4787277d53ca2d078e3f1fd5a235071ff6ca80`; vendored liboqs 0.16.0; Swift tools 6.3; MIT license; C implementation described as prototype-oriented upstream software | All three | Gate for future work; latest package is not compatible with the Xcode 26 Swift 6.2 baseline and has a narrower API surface |
+| `mldsa-native` 2.0.0 | Finalized C implementation with no SwiftPM package or wrapper selected in this repository | All three | Future C-interop research only, not a current Swift-compatible candidate |
+
+No other actively maintained finalized Swift-compatible implementation was
+credible enough to add to the primary comparison without a reproducible build,
+clear final-spec provenance, and a documented key representation boundary.
+
+## 28. Swift API And Runtime Boundary
+
+CryptoKit exposes `CryptoKit.MLDSA65` and `CryptoKit.MLDSA87` namespaces. Each
+private key supports random generation, FIPS 204 `seedRepresentation` input and
+output, an associated raw public key, pure signing, and context signing. The
+32-byte seed initializer implements `ML-DSA.KeyGen_internal` and can validate a
+supplied public key. `integrityCheckedRepresentation` is a separate 64-byte
+representation containing the seed and a SHA3-256 public-key hash. Public keys
+use the FIPS 204 raw serialization. CryptoKit does not expose expanded private
+bytes, private PKCS#8 import/export, public SPKI import/export, or HashML-DSA.
+
+The Apple-platform `swift-crypto` 4.5.1 `Package.swift` keeps its development
+flag disabled. On Apple platforms its default settings define
+`CRYPTO_IN_SWIFTPM` without forcing the build API, and `MLDSA.swift` re-exports
+CryptoKit. Its source aliases CoreCrypto and OpenSSL/BoringSSL implementations
+only across different build configurations. A separately controlled local
+development or forked configuration may be evaluated as a BoringSSL engine,
+but it must be built, identified, and tested as a distinct distribution before
+receiving a separate engine lineage.
+
+The direct CryptoKit runner requires a macOS 26 host, Xcode 26, the macOS 26
+SDK, and the Swift 6.2 toolchain. Apple documentation lists the corresponding
+OS 26 availability across iOS, iPadOS, macCatalyst, macOS, tvOS, visionOS, and
+watchOS, but this evaluator is a macOS command-line process and does not become
+an iOS application. SwiftDilithium requires 64-bit Swift and declares Swift
+tools 5.10, so it can target the Xcode 26 Swift toolchain. Its build wrapper
+patches the pinned upstream RNG calls to `SystemRandomNumberGenerator` so the
+runner can also target Linux. `liboqs-swift`
+declares Swift tools 6.3 and requires a newer toolchain than the current Apple
+baseline.
+
+Swift runtime metadata must use `osName`, `osVersion`, and `architecture` for
+the host, omit or leave `javaVersion` and `javaVendor` null under schema `1.1`, and
+record `language=swift`, `api`, `swiftVersion`, `swiftToolsVersion`,
+`xcodeVersion`, `sdkVersion`, `deploymentTarget`, package revision, and
+`backend` in `runtime.buildProperties`.
+
+## 29. Swift Representation And Capability Matrix
+
+| Candidate | Raw public | Private seed | Expanded private | Provider-specific private | SPKI/PKCS#8 | Context | HashML-DSA/pre-hash |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CryptoKit | Native FIPS 204 raw bytes | Native 32-byte seed | Unsupported by native API | Native 64-byte `integrityCheckedRepresentation` | Unsupported by native API; evaluator-derived DER may be tested | Native pure/context signing | Unsupported by public API |
+| Default `swift-crypto` on Apple | Same CryptoKit API surface | Same CryptoKit API surface | Unsupported by default facade | Same 64-byte integrity-checked representation | Unsupported by default facade | Same CryptoKit API surface | Unsupported by default facade |
+| SwiftDilithium | `PublicKey.keyBytes` | No separate seed constructor | `SecretKey.keyBytes` with normative expanded sizes | None | PEM `PUBLIC KEY` SPKI and `PRIVATE KEY` PKCS#8-style expanded-key encoding | Pure and context APIs; 255-byte maximum and 256-byte rejection | Pure pre-hash API via `PreHash`, including SHA-2, SHA-3, and SHAKE variants |
+| `liboqs-swift` | Native raw `Data` | Unsupported | Native raw secret `Data` | None | Unsupported by package API | Pure signing only | Unsupported by package API |
+
+Representation records must use `origin=native-api` for the APIs above,
+`origin=standard-container` for containers actually accepted or emitted by a
+provider, and `origin=evaluator-derived` for DER generated outside the provider.
+Use `kind=integrity-checked-private` for the CryptoKit-specific 64-byte form.
+Private bytes and private hashes remain inside the runner process. The
+`ParameterSetResult` size fields continue to contain the normative values from
+section 10 even when a provider reports an individual capability as
+unsupported.
+
+## 30. Swift Runner Structure
+
+Create independent SwiftPM build roots with no Maven dependency:
+
+| Runner root | Product | Dependency boundary | Initial status |
+| --- | --- | --- | --- |
+| `runners/swift/cryptokit` | `cryptokit-runner` | System `CryptoKit` only | Source implemented; macOS validation pending |
+| `runners/swift/swift-dilithium` | `swift-dilithium-runner` | Pinned SwiftDilithium 3.6.0 and its declared dependencies with a revision-checked RNG portability patch | Source implemented; Linux/macOS validation pending |
+| `runners/swift/swift-crypto-boringssl` | `swift-crypto-boringssl-runner` | Only if a controlled forced-build configuration is maintained | Gated research |
+| `runners/swift/liboqs-swift` | `liboqs-swift-runner` | Pinned `liboqs-swift` and vendored liboqs | Gated future runner |
+
+Each executable accepts the result output path as its only orchestration input,
+evaluates one result document containing all supported parameter sets, and
+writes only the normalized private-material-free JSON. A small Foundation
+`Codable` contract mirror may live inside each Swift build root or a local
+support package with no cryptographic dependencies; it must remain
+schema-compatible with the shared JSON contract and be checked against the
+schema fixtures. On Linux or macOS, build SwiftDilithium with
+`runners/swift/swift-dilithium/build.sh`; on macOS, build CryptoKit with
+`swift build -c release`. Then invoke the fixed `.build/release/<runner>
+<output>` executable.
+
+Use stable identities such as `apple-cryptokit-mldsa` with lineage
+`apple-cryptokit` and `swift-dilithium` with lineage `swift-dilithium`. The
+default Swift Crypto facade uses the Apple lineage and is not a second engine
+row. A forced BoringSSL build, if ever selected, receives a separate identity
+only after its actual backend and vendored revision are recorded.
+
+## 31. Swift Correctness And Interoperability Tests
+
+For each supported set and runner:
+
+- Check the normative public, seed, expanded-private, and signature lengths.
+- Generate, export, re-import, and compare raw representations without writing private bytes to the result.
+- Reconstruct CryptoKit keys from fixed 32-byte seeds, validate matching and mismatching public-key arguments, and round-trip the 64-byte integrity-checked representation including corruption rejection.
+- Run pure sign/verify, modified message, modified signature, wrong public key, malformed key length, and wrong parameter-set cases.
+- Test empty, ordinary, 255-byte, and 256-byte contexts; record API-specific rejection behavior and ensure changing context invalidates verification.
+- Exercise SwiftDilithium deterministic and randomized signing separately; do not require byte-identical signatures from randomized APIs or CryptoKit APIs without randomness control.
+- Run HashML-DSA/pre-hash vectors only for SwiftDilithium. CryptoKit and default Swift Crypto report this capability as unsupported rather than treating pure ML-DSA as pre-hashed ML-DSA.
+- Use FIPS 204 and ACVP vectors wherever the API supplies the required seed, randomness, or verification inputs. CryptoKit can validate externally supplied public keys and signatures, but its public API does not provide deterministic signing randomness control.
+- Validate SwiftDilithium SPKI and PKCS#8-style PEM OIDs, absent parameters, expanded-key choice, malformed DER, and round trips with the Java providers where the encodings match RFC 9881.
+- Test evaluator-derived RFC 9881 DER around CryptoKit raw material separately from native CryptoKit container capability.
+- Store producer-by-consumer results for raw public keys and signatures only; keep private-key reconstruction inside the producing process.
+
+No performance loops, Secure Enclave tests, Keychain tests, iOS application
+tests, or physical-device requirements are added. A missing API is recorded as
+`unsupported`, and a failed vector or malformed-input check remains a failure.
+
+## 32. Contract And Backend Follow-Up
+
+The shared contract change is limited to the genuine platform requirement:
+schema `1.1` accepts a Swift runtime without Java identity values while keeping
+the existing normative sizes, capability statuses, representation records, and
+private-material-free boundary. Keep schema `1.0` validation and import
+behavior for existing Java results. Update the contract schema resource and
+`EvaluationRunService` validation together; do not silently reinterpret a
+schema `1.0` document as a Swift document.
+
+The current `RunnerDefinition` stores one artifact path and
+`RunnerExecutionService` uses a typed fixed argv builder for Java JARs and native
+executables. `RunnerCatalog` should gate CryptoKit unless the host is macOS with
+the required SDK, while SwiftDilithium may be executed on Linux or macOS once a
+non-symbolic executable artifact exists. `RunnerDescriptor` must continue
+omitting filesystem paths and command lines.
+
+## 33. Swift Packaging And Delivery Risks
+
+CryptoKit is an Apple system framework distributed through the Apple SDK and
+requires the target Apple runtime; it is not an independently redistributable
+Swift package. `swift-crypto` is Apache-2.0 with its required notice and
+vendored BoringSSL licensing obligations. SwiftDilithium is MIT, and its ASN1,
+BigInt, and Digest dependencies require their own pinned-license review.
+`liboqs-swift` and upstream liboqs are MIT, but the wrapper's toolchain and
+prototype-oriented upstream status keep it gated. The SwiftDilithium build
+wrapper applies a small source patch to the pinned MIT dependencies and records
+that fact in runtime metadata. No candidate receives a FIPS validation claim
+merely from implementing final FIPS 204.
+
+This Swift plan is complete when the candidate and representation matrices,
+CryptoKit/Swift Crypto lineage decision, Apple toolchain requirements, runner
+layout, schema compatibility, executable-launch boundary, test coverage,
+license constraints, unsupported capabilities, risks, and source URLs are
+preserved here. CryptoKit implementation and execution require a macOS/Xcode
+host; SwiftDilithium can be built and executed on Linux or macOS with the
+documented portability patch.
+
+Next phase: JavaScript and TypeScript

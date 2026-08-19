@@ -5,16 +5,30 @@
   "type": "object",
   "required": ["schemaVersion", "runId", "generatedAt", "implementation", "runtime", "parameterSets", "checks", "interoperability", "warnings"],
   "properties": {
-    "schemaVersion": {"const": "1.0"},
+    "schemaVersion": {"enum": ["1.0", "1.1"]},
     "runId": {"type": "string", "minLength": 1},
     "generatedAt": {"type": "string", "format": "date-time"},
     "implementation": {"$ref": "#/$defs/implementation"},
-    "runtime": {"$ref": "#/$defs/runtime"},
+    "runtime": {"type": "object"},
     "parameterSets": {"type": "array", "items": {"$ref": "#/$defs/parameterSet"}},
     "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
     "interoperability": {"type": "array", "items": {"$ref": "#/$defs/interop"}},
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
+  "oneOf": [
+    {
+      "properties": {
+        "schemaVersion": {"const": "1.0"},
+        "runtime": {"$ref": "#/$defs/runtimeV1"}
+      }
+    },
+    {
+      "properties": {
+        "schemaVersion": {"const": "1.1"},
+        "runtime": {"$ref": "#/$defs/runtimeV1_1"}
+      }
+    }
+  ],
   "$defs": {
     "implementation": {
       "type": "object",
@@ -29,12 +43,24 @@
         "assuranceStatus": {"type": "string"}
       }
     },
-    "runtime": {
+    "runtimeV1": {
       "type": "object",
       "required": ["javaVersion", "javaVendor", "osName", "osVersion", "architecture", "buildProperties"],
       "properties": {
         "javaVersion": {"type": "string"},
         "javaVendor": {"type": "string"},
+        "osName": {"type": "string"},
+        "osVersion": {"type": "string"},
+        "architecture": {"type": "string"},
+        "buildProperties": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "runtimeV1_1": {
+      "type": "object",
+      "required": ["osName", "osVersion", "architecture", "buildProperties"],
+      "properties": {
+        "javaVersion": {"type": ["string", "null"]},
+        "javaVendor": {"type": ["string", "null"]},
         "osName": {"type": "string"},
         "osVersion": {"type": "string"},
         "architecture": {"type": "string"},

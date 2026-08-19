@@ -74,9 +74,7 @@ public class RunnerExecutionService {
   public RunnerExecutionSnapshot start(String runnerId) {
     ensureExecutionEnabled();
     var definition = catalog.require(runnerId);
-    if (!definition.executable()
-        || !Files.isRegularFile(definition.artifact())
-        || Files.isSymbolicLink(definition.artifact())) {
+    if (!definition.executable() || !artifactAvailable(definition)) {
       throw RunnerExecutionException.unavailable("Runner artifact is not available: " + runnerId);
     }
     if (!activeRunners.add(runnerId)) {
@@ -164,21 +162,8 @@ public class RunnerExecutionService {
         execution.finish("CANCELLED", null, null, "Execution cancelled");
         return;
       }
-      var javaExecutable =
-          Path.of(System.getProperty("java.home"), "bin", "java").toAbsolutePath().normalize();
-      if (!Files.isRegularFile(javaExecutable)) {
-        throw new IOException("Java executable is unavailable");
-      }
-
       var processBuilder =
-          new ProcessBuilder(
-                  List.of(
-                      javaExecutable.toString(),
-                      "--enable-native-access=ALL-UNNAMED",
-                      "-Xmx256m",
-                      "-jar",
-                      definition.artifact().toString(),
-                      output.toString()))
+          new ProcessBuilder(command(definition, output))
               .directory(properties.runnerRoot().toAbsolutePath().normalize().toFile())
               .redirectOutput(ProcessBuilder.Redirect.DISCARD)
               .redirectError(ProcessBuilder.Redirect.PIPE);
@@ -286,6 +271,34 @@ public class RunnerExecutionService {
     }
     return !Files.isRegularFile(output, LinkOption.NOFOLLOW_LINKS)
         || Files.size(output) > properties.maxResultBytes();
+  }
+
+  private static boolean artifactAvailable(RunnerDefinition definition) {
+    if (definition.artifact() == null
+        || !Files.isRegularFile(definition.artifact())
+        || Files.isSymbolicLink(definition.artifact())) {
+      return false;
+    }
+    return definition.launchKind() != RunnerLaunchKind.EXECUTABLE
+        || Files.isExecutable(definition.artifact());
+  }
+
+  private static List<String> command(RunnerDefinition definition, Path output) throws IOException {
+    if (definition.launchKind() == RunnerLaunchKind.EXECUTABLE) {
+      return List.of(definition.artifact().toString(), output.toString());
+    }
+    var javaExecutable =
+        Path.of(System.getProperty("java.home"), "bin", "java").toAbsolutePath().normalize();
+    if (!Files.isRegularFile(javaExecutable)) {
+      throw new IOException("Java executable is unavailable");
+    }
+    return List.of(
+        javaExecutable.toString(),
+        "--enable-native-access=ALL-UNNAMED",
+        "-Xmx256m",
+        "-jar",
+        definition.artifact().toString(),
+        output.toString());
   }
 
   private void pruneExecutions() {

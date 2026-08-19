@@ -83,6 +83,44 @@ class EvaluationRunServiceTest {
   }
 
   @Test
+  void acceptsSwiftSchemaWithoutJavaRuntimeIdentity() {
+    var base = result("run-swift");
+    var swift =
+        new EvaluationResult(
+            "1.1",
+            base.runId(),
+            base.generatedAt(),
+            base.implementation(),
+            new RuntimeInfo(null, null, "macOS", "26.0", "arm64", Map.of("language", "swift")),
+            base.parameterSets(),
+            base.checks(),
+            base.interoperability(),
+            base.warnings());
+
+    assertThat(service.importRun(swift).duplicate()).isFalse();
+  }
+
+  @Test
+  void rejectsSchemaOneWithNullableJavaRuntimeFields() {
+    var base = result("run-java-null-runtime");
+    var invalid =
+        new EvaluationResult(
+            "1.0",
+            base.runId(),
+            base.generatedAt(),
+            base.implementation(),
+            new RuntimeInfo(null, null, "Linux", "1", "amd64", Map.of()),
+            base.parameterSets(),
+            base.checks(),
+            base.interoperability(),
+            base.warnings());
+
+    assertThatThrownBy(() -> service.importRun(invalid))
+        .isInstanceOf(EvaluationRunException.class)
+        .hasMessageContaining("schema 1.0");
+  }
+
+  @Test
   void rejectsMalformedCheckWithoutThrowingNullPointerException() {
     var result = result("run-4");
     var invalid =
@@ -140,6 +178,37 @@ class EvaluationRunServiceTest {
                 List.of(
                     new Representation(
                         "spki", null, 1, null, null, null, null, "standard-container", null))));
+
+    assertThatThrownBy(() -> service.importRun(invalid))
+        .isInstanceOf(EvaluationRunException.class)
+        .hasMessage("Invalid representation definition");
+  }
+
+  @Test
+  void rejectsHashesForPrivateRepresentations() {
+    var result = result("run-private-hash");
+    var invalid =
+        withParameterSet(
+            result,
+            new ParameterSetResult(
+                "ML-DSA-44",
+                2,
+                1312,
+                32,
+                2560,
+                2420,
+                List.of(),
+                List.of(
+                    new Representation(
+                        "pkcs8",
+                        "pass",
+                        64,
+                        "private-hash",
+                        null,
+                        null,
+                        "seed",
+                        "standard-container",
+                        null))));
 
     assertThatThrownBy(() -> service.importRun(invalid))
         .isInstanceOf(EvaluationRunException.class)

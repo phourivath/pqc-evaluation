@@ -115,7 +115,7 @@ public class EvaluationRunService {
     if (result == null) {
       throw new EvaluationRunException("Result document is required");
     }
-    if (!"1.0".equals(result.schemaVersion())) {
+    if (!"1.0".equals(result.schemaVersion()) && !"1.1".equals(result.schemaVersion())) {
       throw new EvaluationRunException("Unsupported schemaVersion: " + result.schemaVersion());
     }
     if (isBlank(result.runId())
@@ -136,12 +136,14 @@ public class EvaluationRunService {
       throw new EvaluationRunException("implementation identity fields are required");
     }
     var runtime = result.runtime();
-    if (isBlank(runtime.javaVersion())
-        || isBlank(runtime.javaVendor())
-        || isBlank(runtime.osName())
+    if (isBlank(runtime.osName())
         || isBlank(runtime.osVersion())
         || isBlank(runtime.architecture())) {
       throw new EvaluationRunException("runtime identity fields are required");
+    }
+    if ("1.0".equals(result.schemaVersion())
+        && (isBlank(runtime.javaVersion()) || isBlank(runtime.javaVendor()))) {
+      throw new EvaluationRunException("Java runtime identity fields are required for schema 1.0");
     }
     if (result.parameterSets().isEmpty()) {
       throw new EvaluationRunException("At least one parameter set is required");
@@ -210,6 +212,7 @@ public class EvaluationRunService {
           || isBlank(representation.origin())
           || (representation.byteLength() != null && representation.byteLength() < 0)
           || (representation.sha256() != null && isBlank(representation.sha256()))
+          || (isPrivateRepresentation(representation) && representation.sha256() != null)
           || (representation.algorithmOid() != null && isBlank(representation.algorithmOid()))
           || (representation.privateChoice() != null && isBlank(representation.privateChoice()))) {
         throw new EvaluationRunException("Invalid representation definition");
@@ -219,6 +222,13 @@ public class EvaluationRunService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private static boolean isPrivateRepresentation(EvaluationResult.Representation representation) {
+    return representation.privateChoice() != null
+        || representation.kind().startsWith("raw-private-")
+        || "integrity-checked-private".equals(representation.kind())
+        || "pkcs8".equals(representation.kind());
   }
 
   public record ImportOutcome(EvaluationResult result, boolean duplicate) {}

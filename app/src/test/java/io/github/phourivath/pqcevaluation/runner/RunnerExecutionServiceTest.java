@@ -2,15 +2,23 @@ package io.github.phourivath.pqcevaluation.runner;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Implementation;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.ParameterSetResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.RuntimeInfo;
 import io.github.phourivath.pqcevaluation.evaluation.EvaluationRunService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -105,6 +113,38 @@ class RunnerExecutionServiceTest {
     }
   }
 
+  @Test
+  void launchesDirectExecutableWithoutJavaWrapper() throws Exception {
+    var root = Files.createTempDirectory("runner-execution-executable");
+    var artifact = createExecutable(root.resolve("native-runner"));
+    var executionRoot = root.resolve("executions");
+    var objectMapper = mock(ObjectMapper.class);
+    var result = executableResult("native");
+    when(objectMapper.readValue(any(Path.class), eq(EvaluationResult.class))).thenReturn(result);
+    var service =
+        service(
+            root,
+            executionRoot,
+            artifact,
+            "native",
+            1024,
+            50,
+            RunnerLaunchKind.EXECUTABLE,
+            objectMapper);
+
+    try {
+      var execution = service.start("native");
+      var completed = awaitTerminal(service, UUID.fromString(execution.executionId()));
+
+      assertThat(completed.status()).isEqualTo("SUCCEEDED");
+      assertThat(completed.resultRunId()).isEqualTo(result.runId());
+      awaitWorkspaceCleanup(executionRoot);
+      assertThat(workspaceEmpty(executionRoot)).isTrue();
+    } finally {
+      service.shutdown();
+    }
+  }
+
   private static RunnerExecutionService service(
       Path root,
       Path executionRoot,
@@ -112,6 +152,26 @@ class RunnerExecutionServiceTest {
       String runnerId,
       long maxResultBytes,
       int maxRetainedExecutions) {
+    return service(
+        root,
+        executionRoot,
+        artifact,
+        runnerId,
+        maxResultBytes,
+        maxRetainedExecutions,
+        RunnerLaunchKind.JAVA_JAR,
+        mock(ObjectMapper.class));
+  }
+
+  private static RunnerExecutionService service(
+      Path root,
+      Path executionRoot,
+      Path artifact,
+      String runnerId,
+      long maxResultBytes,
+      int maxRetainedExecutions,
+      RunnerLaunchKind launchKind,
+      ObjectMapper objectMapper) {
     var catalog = mock(RunnerCatalog.class);
     when(catalog.require(runnerId))
         .thenReturn(
@@ -124,6 +184,7 @@ class RunnerExecutionServiceTest {
                 "IMPLEMENTED",
                 null,
                 artifact,
+                launchKind,
                 List.of()));
     var properties =
         new RunnerExecutionProperties(
@@ -136,7 +197,7 @@ class RunnerExecutionServiceTest {
             maxResultBytes,
             maxRetainedExecutions);
     return new RunnerExecutionService(
-        properties, catalog, new EvaluationRunService(), mock(ObjectMapper.class), "127.0.0.1");
+        properties, catalog, new EvaluationRunService(), objectMapper, "127.0.0.1");
   }
 
   private static RunnerExecutionSnapshot awaitTerminal(
@@ -199,6 +260,25 @@ class RunnerExecutionServiceTest {
       output.closeEntry();
     }
     return artifact;
+  }
+
+  private static Path createExecutable(Path artifact) throws IOException {
+    Files.writeString(artifact, "#!/bin/sh\nprintf '{}' > \"$1\"\n");
+    assertThat(artifact.toFile().setExecutable(true, false)).isTrue();
+    return artifact;
+  }
+
+  private static EvaluationResult executableResult(String runnerId) {
+    return new EvaluationResult(
+        "1.0",
+        "native-run",
+        Instant.parse("2026-08-18T00:00:00Z"),
+        new Implementation(runnerId, runnerId, "test", "test", "test", "test", "test"),
+        new RuntimeInfo("25", "test", "Linux", "1", "amd64", Map.of()),
+        List.of(new ParameterSetResult("ML-DSA-44", 2, 1312, 32, 2560, 2420, List.of(), List.of())),
+        List.of(),
+        List.of(),
+        List.of());
   }
 
   public static final class LargeRunner {
