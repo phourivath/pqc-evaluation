@@ -14,6 +14,7 @@ dependencies must not be added to `app` or the root Maven reactor.
 | `bc-fips` | Bouncy Castle FIPS | 2.1.3 | gated; stable artifact has no ML-DSA |
 | `swift/cryptokit` | Apple CryptoKit ML-DSA | macOS 26 / Xcode 26 | macOS-only executable |
 | `swift/swift-dilithium` | SwiftDilithium ML-DSA | 3.6.0 | Linux/macOS software executable |
+| `javascript/noble` | `@noble/post-quantum` ML-DSA | 0.7.0 | Node `>=20.19.0` TypeScript runner |
 
 BC Base and BC LTS must remain separate JVMs because their provider packages
 overlap. They share the `bouncycastle-java` engine lineage in normalized
@@ -46,6 +47,13 @@ CryptoKit runner independently:
 ```bash
 swift build --package-path runners/swift/common -c release
 swift build --package-path runners/swift/cryptokit -c release
+```
+
+Build the Node-compatible noble runner from its independent NPM build root:
+
+```bash
+npm --prefix runners/javascript/noble ci
+npm --prefix runners/javascript/noble run build
 ```
 
 Each Java build produces a self-contained executable JAR. The Maven Shade
@@ -84,6 +92,9 @@ runners/swift/cryptokit/.build/release/cryptokit-runner \
 
 runners/swift/swift-dilithium/.build/release/swift-dilithium-runner \
   runners/swift/swift-dilithium/.build/release/evaluation-result.json
+
+node runners/javascript/noble/dist/main.js \
+  runners/javascript/noble/build/evaluation-result.json
 ```
 
 Each invocation evaluates ML-DSA-44, ML-DSA-65, and ML-DSA-87, so one result

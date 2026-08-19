@@ -40,6 +40,45 @@ private struct CryptoKitRunner {
     private let message = RunnerSupport.message
     private let context = RunnerSupport.context
 
+    private let keyGenerationSnippet = """
+                // [evidence:key-generation] evaluate(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey()
+                let key = try generate()
+        """
+
+    private let signSnippet = """
+                // [evidence:sign] evaluate(sign:) delegates to PrivateKey.signature(for:)
+                let signature = try sign(key, message)
+        """
+
+    private let verifySnippet = """
+                // [evidence:verify] evaluate(verify:) delegates to PublicKey.isValidSignature(_:for:)
+                let verified = verify(publicKeyValue, signature, message)
+        """
+
+    private func usageExample(for parameterSet: ParameterSet) -> String {
+        let keyType: String
+        switch parameterSet {
+        case .mldsa65:
+            keyType = "MLDSA65"
+        case .mldsa87:
+            keyType = "MLDSA87"
+        case .mldsa44:
+            preconditionFailure("CryptoKit does not support ML-DSA-44")
+        }
+        return """
+        import CryptoKit
+        import Foundation
+
+        @available(macOS 26.0, *)
+        func signAndVerify() throws {
+            let privateKey = try \(keyType).PrivateKey()
+            let message = Data("PQC evaluation message".utf8)
+            let signature = try privateKey.signature(for: message)
+            let verified = privateKey.publicKey.isValidSignature(signature, for: message)
+        }
+        """
+    }
+
     func run(outputPath: String) throws {
         var checks: [CheckResult] = []
         let parameterSets = [
@@ -173,13 +212,48 @@ private struct CryptoKitRunner {
         reconstructIntegrity: (Data) throws -> Key,
         publicKeyFromRaw: (Data) throws -> PublicKey,
         checks: inout [CheckResult]) throws -> ParameterSetResult {
+        let keyGenSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:key-generation] evaluate(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey()
         let key = try generate()
+        let keyGenCallSite = keyGenSite.with(
+            snippet: keyGenerationSnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "key", type: String(describing: type(of: key)), value: parameterSet.rawValue)
+            ],
+            usageExample: usageExample(for: parameterSet))
         let publicKeyValue = publicKey(key)
         let rawPublicValue = rawPublic(key)
         let seedValue = seed(key)
         let integrityValue = integrity(key)
+        let signSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:sign] evaluate(sign:) delegates to PrivateKey.signature(for:)
         let signature = try sign(key, message)
+        let signCallSite = signSite.with(
+            snippet: signSnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "key", type: String(describing: type(of: key)), value: parameterSet.rawValue),
+                Argument(name: "message", type: "Data", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
+                Argument(name: "signature", type: "Data", value: "\(signature.count) bytes")
+            ],
+            usageExample: usageExample(for: parameterSet))
+        let verifySite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:verify] evaluate(verify:) delegates to PublicKey.isValidSignature(_:for:)
         let verified = verify(publicKeyValue, signature, message)
+        let verifyCallSite = verifySite.with(
+            snippet: verifySnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "publicKey", type: String(describing: type(of: publicKeyValue)), value: parameterSet.rawValue),
+                Argument(name: "signature", type: "Data", value: "\(signature.count) bytes"),
+                Argument(name: "message", type: "Data", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
+                Argument(name: "verified", type: "Bool", value: "\(verified)")
+            ],
+            usageExample: usageExample(for: parameterSet))
         let contextSignature = try signContext(key, message, context)
         let contextVerified = verifyContext(publicKeyValue, contextSignature, message, context)
 
@@ -235,9 +309,9 @@ private struct CryptoKitRunner {
         checks.append(RunnerSupport.check("evaluator-derived-containers", parameterSet: parameterSet, category: "encoding", status: RunnerSupport.pass(spkiIdentifier.oid == parameterSet.algorithmOid && pkcs8Identifier.oid == parameterSet.algorithmOid && spkiIdentifier.parametersAbsent && pkcs8Identifier.parametersAbsent), message: "Evaluator-derived SPKI and PKCS#8 use the expected OID and absent parameters"))
 
         let capabilities = [
-            RunnerSupport.capability("key-generation", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PrivateKey initializer"),
-            RunnerSupport.capability("sign", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PrivateKey.signature(for:)"),
-            RunnerSupport.capability("verify", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PublicKey.isValidSignature(_:for:)"),
+            RunnerSupport.capability("key-generation", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PrivateKey initializer", callSite: keyGenCallSite),
+            RunnerSupport.capability("sign", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PrivateKey.signature(for:)", callSite: signCallSite),
+            RunnerSupport.capability("verify", status: "supported", origin: "native-api", evidence: "CryptoKit MLDSA PublicKey.isValidSignature(_:for:)", callSite: verifyCallSite),
             RunnerSupport.capability("raw-public", status: "supported", origin: "native-api", evidence: "CryptoKit PublicKey.rawRepresentation"),
             RunnerSupport.capability("raw-private-seed", status: "supported", origin: "native-api", evidence: "CryptoKit PrivateKey.seedRepresentation"),
             RunnerSupport.capability("raw-private-expanded", status: "unsupported", origin: "native-api", evidence: "CryptoKit private key API", reason: "CryptoKit does not expose expanded private bytes"),

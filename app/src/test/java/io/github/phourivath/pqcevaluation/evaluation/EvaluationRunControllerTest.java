@@ -46,7 +46,22 @@ class EvaluationRunControllerTest {
           "rawPrivateSeedBytes": 32,
           "rawPrivateExpandedBytes": 2560,
           "rawSignatureBytes": 2420,
-          "capabilities": [],
+          "capabilities": [{
+            "operation": "key-generation",
+            "status": "supported",
+            "origin": "native-api",
+            "evidence": "MLDSA65.PrivateKey()",
+            "callSite": {
+              "sourceFile": "Example.swift",
+              "className": "Example",
+              "methodName": "run",
+              "lineNumber": 4,
+              "snippet": "let key = try MLDSA65.PrivateKey()",
+              "highlightLine": 1,
+              "arguments": [],
+              "usageExample": "import CryptoKit"
+            }
+          }],
           "representations": []
         }],
         "checks": [{
@@ -91,6 +106,13 @@ class EvaluationRunControllerTest {
         .perform(get("/api/v1/evaluation-runs/api-run"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.implementation.id").value("jdk-sun-ml-dsa"));
+
+    mockMvc
+        .perform(get("/api/v1/evaluation-runs/api-run"))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.parameterSets[0].capabilities[0].callSite.usageExample")
+                .value("import CryptoKit"));
 
     mockMvc
         .perform(get("/api/v1/comparisons"))

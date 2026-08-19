@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Argument;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CallSite;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Capability;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CheckResult;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Implementation;
@@ -36,6 +38,29 @@ public final class Jdk25Runner {
           new Parameters("ML-DSA-44", 2, 1312, 2560, 2420),
           new Parameters("ML-DSA-65", 3, 1952, 4032, 3309),
           new Parameters("ML-DSA-87", 5, 2592, 4896, 4627));
+  private static final String KEY_GENERATION_SNIPPET =
+      """
+          // [evidence:key-generation] KeyPairGenerator ML-DSA (SUN provider): initialize(spec), generateKeyPair()
+          var generator = KeyPairGenerator.getInstance("ML-DSA");
+          generator.initialize(new NamedParameterSpec(parameters.name()));
+          var keyPair = generator.generateKeyPair();
+          """;
+  private static final String SIGN_SNIPPET =
+      """
+          // [evidence:sign] Signature ML-DSA (SUN provider): initSign(privateKey), update(message), sign()
+          var signature = Signature.getInstance("ML-DSA");
+          signature.initSign(keyPair.getPrivate());
+          signature.update(message);
+          var signatureBytes = signature.sign();
+          """;
+  private static final String VERIFY_SNIPPET =
+      """
+          // [evidence:verify] Signature ML-DSA (SUN provider): initVerify(publicKey), update(message), verify(signature)
+          var verifier = Signature.getInstance("ML-DSA");
+          verifier.initVerify(keyPair.getPublic());
+          verifier.update(message);
+          var verified = verifier.verify(signatureBytes);
+          """;
 
   private Jdk25Runner() {}
 
@@ -87,18 +112,73 @@ public final class Jdk25Runner {
 
   private static ParameterSetResult evaluate(Parameters parameters, List<CheckResult> checks)
       throws Exception {
+    var message = "PQC evaluation message".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    var keyGenSite = Evidence.capture();
+    // [evidence:key-generation] KeyPairGenerator ML-DSA (SUN provider): initialize(spec), generateKeyPair()
     var generator = KeyPairGenerator.getInstance("ML-DSA");
     generator.initialize(new NamedParameterSpec(parameters.name()));
     var keyPair = generator.generateKeyPair();
-    var message = "PQC evaluation message".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    var keyGenCallSite =
+        keyGenSite.with(
+            KEY_GENERATION_SNIPPET,
+            4,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument(
+                    "parameterSpec",
+                    "java.security.spec.NamedParameterSpec",
+                    parameters.name()),
+                new Argument(
+                    "keyPair",
+                    "java.security.KeyPair",
+                    keyPair.getPublic().getClass().getSimpleName()
+                        + " + "
+                        + keyPair.getPrivate().getClass().getSimpleName())));
+    var signSite = Evidence.capture();
+    // [evidence:sign] Signature ML-DSA (SUN provider): initSign(privateKey), update(message), sign()
     var signature = Signature.getInstance("ML-DSA");
     signature.initSign(keyPair.getPrivate());
     signature.update(message);
     var signatureBytes = signature.sign();
+    var signCallSite =
+        signSite.with(
+            SIGN_SNIPPET,
+            5,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument(
+                    "key", "java.security.PrivateKey", keyPair.getPrivate().getClass().getName()),
+                new Argument(
+                    "message",
+                    "byte[]",
+                    new String(message, java.nio.charset.StandardCharsets.UTF_8)
+                        + " ("
+                        + message.length
+                        + " bytes UTF-8)"),
+                new Argument("signature", "byte[]", signatureBytes.length + " bytes")));
+    var verifySite = Evidence.capture();
+    // [evidence:verify] Signature ML-DSA (SUN provider): initVerify(publicKey), update(message), verify(signature)
     var verifier = Signature.getInstance("ML-DSA");
     verifier.initVerify(keyPair.getPublic());
     verifier.update(message);
     var verified = verifier.verify(signatureBytes);
+    var verifyCallSite =
+        verifySite.with(
+            VERIFY_SNIPPET,
+            5,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument(
+                    "key", "java.security.PublicKey", keyPair.getPublic().getClass().getName()),
+                new Argument(
+                    "message",
+                    "byte[]",
+                    new String(message, java.nio.charset.StandardCharsets.UTF_8)
+                        + " ("
+                        + message.length
+                        + " bytes UTF-8)"),
+                new Argument("signature", "byte[]", signatureBytes.length + " bytes"),
+                new Argument("verified", "boolean", String.valueOf(verified))));
 
     var spki = keyPair.getPublic().getEncoded();
     var pkcs8 = keyPair.getPrivate().getEncoded();
@@ -176,9 +256,10 @@ public final class Jdk25Runner {
 
     var capabilities =
         List.of(
-            new Capability("key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null),
-            new Capability("sign", "supported", "native-api", "Signature ML-DSA", null),
-            new Capability("verify", "supported", "native-api", "Signature ML-DSA", null),
+            new Capability(
+                "key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null, keyGenCallSite),
+            new Capability("sign", "supported", "native-api", "Signature ML-DSA", null, signCallSite),
+            new Capability("verify", "supported", "native-api", "Signature ML-DSA", null, verifyCallSite),
             new Capability(
                 "raw-public",
                 "supported",
@@ -279,6 +360,39 @@ public final class Jdk25Runner {
       return HEX.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
     } catch (Exception exception) {
       throw new IllegalStateException("SHA-256 is required", exception);
+    }
+  }
+
+  /** Captures the runner's own call-site coordinates (file, class, method, line). */
+  private static final class Evidence {
+    private Evidence() {}
+
+    static Coordinates capture() {
+      var owner = Jdk25Runner.class.getName();
+      for (var frame : Thread.currentThread().getStackTrace()) {
+        if (owner.equals(frame.getClassName()) && !"capture".equals(frame.getMethodName())) {
+          return new Coordinates(
+              frame.getFileName(),
+              frame.getClassName(),
+              frame.getMethodName(),
+              frame.getLineNumber());
+        }
+      }
+      throw new IllegalStateException("No runner frame on the call stack");
+    }
+
+    record Coordinates(
+        String sourceFile, String className, String methodName, int lineNumber) {
+      CallSite with(String snippet, int highlightLine, List<Argument> arguments) {
+        return new CallSite(
+            sourceFile,
+            className,
+            methodName,
+            lineNumber + highlightLine,
+            snippet,
+            highlightLine,
+            arguments);
+      }
     }
   }
 

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Argument
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CallSite
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Capability
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CheckResult
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Implementation
@@ -80,9 +82,26 @@ internal class EvaluationRunner(private val output: Path) {
         checks: MutableList<CheckResult>
     ): ParameterSetResult {
         val parameterSpec = MLDSAParameterSpec.fromName(parameters.name)
+        val keyGenSite = captureCallSite()
+        // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
         val generator = KeyPairGenerator.getInstance("ML-DSA", providerName)
         generator.initialize(parameterSpec)
         val keyPair = generator.generateKeyPair()
+        val keyGenCallSite =
+            keyGenSite.with(
+                KEY_GENERATION_SNIPPET,
+                4,
+                listOf(
+                    Argument("algorithm", "java.lang.String", "ML-DSA"),
+                    Argument("provider", "java.lang.String", providerName),
+                    Argument(
+                        "parameterSpec",
+                        "org.bouncycastle.jcajce.spec.MLDSAParameterSpec",
+                        parameters.name),
+                    Argument(
+                        "keyPair",
+                        "java.security.KeyPair",
+                        "${keyPair.public.javaClass.simpleName} + ${keyPair.private.javaClass.simpleName}")))
         val publicKey = keyPair.public as MLDSAPublicKey
         val privateKey = keyPair.private as MLDSAPrivateKey
         val rawPublic = publicKey.publicData
@@ -91,15 +110,46 @@ internal class EvaluationRunner(private val output: Path) {
         val spki = publicKey.encoded
         val pkcs8 = privateKey.encoded
 
+        val signSite = captureCallSite()
+        // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
         val signer = Signature.getInstance("ML-DSA", providerName)
         signer.initSign(privateKey)
         signer.update(MESSAGE)
         val signatureBytes = signer.sign()
+        val signCallSite =
+            signSite.with(
+                SIGN_SNIPPET,
+                5,
+                listOf(
+                    Argument("algorithm", "java.lang.String", "ML-DSA"),
+                    Argument("provider", "java.lang.String", providerName),
+                    Argument("key", "java.security.PrivateKey", privateKey.javaClass.name),
+                    Argument(
+                        "message",
+                        "byte[]",
+                        "${String(MESSAGE, StandardCharsets.UTF_8)} (${MESSAGE.size} bytes UTF-8)"),
+                    Argument("signature", "byte[]", "${signatureBytes.size} bytes")))
 
+        val verifySite = captureCallSite()
+        // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
         val verifier = Signature.getInstance("ML-DSA", providerName)
         verifier.initVerify(publicKey)
         verifier.update(MESSAGE)
         val verified = verifier.verify(signatureBytes)
+        val verifyCallSite =
+            verifySite.with(
+                VERIFY_SNIPPET,
+                5,
+                listOf(
+                    Argument("algorithm", "java.lang.String", "ML-DSA"),
+                    Argument("provider", "java.lang.String", providerName),
+                    Argument("key", "java.security.PublicKey", publicKey.javaClass.name),
+                    Argument(
+                        "message",
+                        "byte[]",
+                        "${String(MESSAGE, StandardCharsets.UTF_8)} (${MESSAGE.size} bytes UTF-8)"),
+                    Argument("signature", "byte[]", "${signatureBytes.size} bytes"),
+                    Argument("verified", "boolean", verified.toString())))
 
         val keyFactory = KeyFactory.getInstance("ML-DSA", providerName)
         val importedPublic =
@@ -183,9 +233,9 @@ internal class EvaluationRunner(private val output: Path) {
 
         val capabilities =
             listOf(
-                Capability("key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null),
-                Capability("sign", "supported", "native-api", "Signature ML-DSA", null),
-                Capability("verify", "supported", "native-api", "Signature ML-DSA", null),
+                Capability("key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null, keyGenCallSite),
+                Capability("sign", "supported", "native-api", "Signature ML-DSA", null, signCallSite),
+                Capability("verify", "supported", "native-api", "Signature ML-DSA", null, verifyCallSite),
                 Capability("raw-public", "supported", "native-api", "MLDSAPublicKey.publicData", null),
                 Capability(
                     "raw-private-seed",
@@ -270,6 +320,37 @@ internal class EvaluationRunner(private val output: Path) {
             parameters.signatureBytes,
             capabilities,
             representations)
+    }
+
+    private fun captureCallSite(): CallSiteCoordinates {
+        val owner = javaClass.name
+        for (frame in Thread.currentThread().stackTrace) {
+            if (frame.className == owner && frame.methodName != "captureCallSite") {
+                return CallSiteCoordinates(
+                    frame.fileName,
+                    frame.className,
+                    frame.methodName,
+                    frame.lineNumber)
+            }
+        }
+        error("No runner frame on the call stack")
+    }
+
+    private data class CallSiteCoordinates(
+        val sourceFile: String,
+        val className: String,
+        val methodName: String,
+        val lineNumber: Int
+    ) {
+        fun with(snippet: String, highlightLine: Int, arguments: List<Argument>): CallSite =
+            CallSite(
+                sourceFile,
+                className,
+                methodName,
+                lineNumber + highlightLine,
+                snippet,
+                highlightLine,
+                arguments)
     }
 
     private fun evaluateContext(
@@ -415,6 +496,29 @@ internal class EvaluationRunner(private val output: Path) {
         const val ENGINE_LINEAGE = "bouncycastle-java"
         val MESSAGE = "PQC evaluation message".toByteArray(StandardCharsets.UTF_8)
         val CONTEXT = "pqc-evaluation".toByteArray(StandardCharsets.UTF_8)
+        val KEY_GENERATION_SNIPPET =
+            """
+                // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
+                val generator = KeyPairGenerator.getInstance("ML-DSA", providerName)
+                generator.initialize(parameterSpec)
+                val keyPair = generator.generateKeyPair()
+            """.trimIndent()
+        val SIGN_SNIPPET =
+            """
+                // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
+                val signer = Signature.getInstance("ML-DSA", providerName)
+                signer.initSign(privateKey)
+                signer.update(MESSAGE)
+                val signatureBytes = signer.sign()
+            """.trimIndent()
+        val VERIFY_SNIPPET =
+            """
+                // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
+                val verifier = Signature.getInstance("ML-DSA", providerName)
+                verifier.initVerify(publicKey)
+                verifier.update(MESSAGE)
+                val verified = verifier.verify(signatureBytes)
+            """.trimIndent()
         val PARAMETERS =
             listOf(
                 Parameters("ML-DSA-44", 2, 1312, 2560, 2420),

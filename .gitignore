@@ -34,6 +34,10 @@ build/
 .build/
 .swiftpm/
 
+### JavaScript runners ###
+runners/javascript/**/dist/
+runners/javascript/**/node_modules/
+
 ### VS Code ###
 .vscode/
 

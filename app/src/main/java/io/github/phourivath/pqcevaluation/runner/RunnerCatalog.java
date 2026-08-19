@@ -85,6 +85,18 @@ public class RunnerCatalog {
                 null,
                 RunnerLaunchKind.JAVA_JAR,
                 PARAMETER_SETS),
+            "noble",
+            new RunnerDefinition(
+                "noble",
+                "Noble ML-DSA (TypeScript)",
+                "noble-ml-dsa",
+                "0.7.0",
+                "noble-js",
+                "IMPLEMENTED",
+                null,
+                root.resolve("runners/javascript/noble/dist/main.js"),
+                RunnerLaunchKind.NODE_SCRIPT,
+                PARAMETER_SETS),
             "swift-cryptokit",
             swiftDefinition(
                 root,

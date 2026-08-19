@@ -89,7 +89,33 @@
         "status": {"enum": ["supported", "unsupported"]},
         "origin": {"type": "string", "minLength": 1},
         "evidence": {"type": "string", "minLength": 1},
-        "reason": {"type": ["string", "null"]}
+        "reason": {"type": ["string", "null"]},
+        "callSite": {"oneOf": [{"$ref": "#/$defs/callSite"}, {"type": "null"}]}
+      }
+    },
+    "callSite": {
+      "type": "object",
+      "required": ["sourceFile", "className", "methodName", "lineNumber", "snippet", "highlightLine", "arguments"],
+      "properties": {
+        "sourceFile": {"type": "string", "minLength": 1},
+        "className": {"type": "string", "minLength": 1},
+        "methodName": {"type": "string", "minLength": 1},
+        "lineNumber": {"type": "integer", "minimum": 1},
+        "snippet": {"type": "string", "minLength": 1},
+        "highlightLine": {"type": "integer", "minimum": 1},
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "value"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "type": {"type": "string", "minLength": 1},
+              "value": {"type": "string"}
+            }
+          }
+        },
+        "usageExample": {"type": ["string", "null"], "minLength": 1}
       }
     },
     "representation": {

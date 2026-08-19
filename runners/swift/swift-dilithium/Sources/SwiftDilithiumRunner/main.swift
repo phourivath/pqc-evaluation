@@ -44,6 +44,34 @@ private struct SwiftDilithiumRunner {
     private let message = [UInt8](RunnerSupport.message)
     private let context = [UInt8](RunnerSupport.context)
 
+    private let keyGenerationSnippet = """
+                // [evidence:key-generation] Dilithium.GenerateKeyPair(kind:): parameter set kind
+                let keyPair = Dilithium.GenerateKeyPair(kind: kind(for: parameterSet))
+        """
+
+    private let signSnippet = """
+                // [evidence:sign] SecretKey.Sign(message:randomize:): message, deterministic
+                let deterministicSignature = secretKey.Sign(message: message, randomize: false)
+        """
+
+    private let verifySnippet = """
+                // [evidence:verify] PublicKey.Verify(message:signature:): signature, message
+                let deterministicVerified = publicKey.Verify(message: message, signature: deterministicSignature)
+        """
+
+    private func usageExample(for parameterSet: ParameterSet) -> String {
+        let kindName = ".\(String(describing: kind(for: parameterSet)))"
+        return """
+        import SwiftDilithium
+
+        let keyPair = Dilithium.GenerateKeyPair(kind: \(kindName))
+        let message = Array("PQC evaluation message".utf8)
+        // Use randomize: false only when deterministic test vectors are required.
+        let signature = keyPair.sk.Sign(message: message, randomize: true)
+        let verified = keyPair.pk.Verify(message: message, signature: signature)
+        """
+    }
+
     func run(outputPath: String) throws {
         var checks: [CheckResult] = []
         let parameterSets = try ParameterSet.allCases.map {
@@ -86,14 +114,51 @@ private struct SwiftDilithiumRunner {
     private func evaluate(
         _ parameterSet: ParameterSet,
         checks: inout [CheckResult]) throws -> ParameterSetResult {
+        let keyGenSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:key-generation] Dilithium.GenerateKeyPair(kind:): parameter set kind
         let keyPair = Dilithium.GenerateKeyPair(kind: kind(for: parameterSet))
+        let keyGenCallSite = keyGenSite.with(
+            snippet: keyGenerationSnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "kind", type: "Kind", value: parameterSet.rawValue),
+                Argument(name: "keyPair", type: String(describing: type(of: keyPair)), value: "generated")
+            ],
+            usageExample: usageExample(for: parameterSet))
         let secretKey = keyPair.sk
         let publicKey = keyPair.pk
         let rawPublic = Data(publicKey.keyBytes)
         let rawPrivate = Data(secretKey.keyBytes)
+        let signSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:sign] SecretKey.Sign(message:randomize:): message, deterministic
         let deterministicSignature = secretKey.Sign(message: message, randomize: false)
+        let signCallSite = signSite.with(
+            snippet: signSnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "key", type: String(describing: type(of: secretKey)), value: parameterSet.rawValue),
+                Argument(name: "message", type: "[UInt8]", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
+                Argument(name: "randomize", type: "Bool", value: "false"),
+                Argument(name: "signature", type: "[UInt8]", value: "\(deterministicSignature.count) bytes")
+            ],
+            usageExample: usageExample(for: parameterSet))
         let randomizedSignature = secretKey.Sign(message: message, randomize: true)
+        let verifySite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
+        // [evidence:verify] PublicKey.Verify(message:signature:): signature, message
         let deterministicVerified = publicKey.Verify(message: message, signature: deterministicSignature)
+        let verifyCallSite = verifySite.with(
+            snippet: verifySnippet,
+            highlightLine: 2,
+            arguments: [
+                Argument(name: "algorithm", type: "String", value: "ML-DSA"),
+                Argument(name: "publicKey", type: String(describing: type(of: publicKey)), value: parameterSet.rawValue),
+                Argument(name: "signature", type: "[UInt8]", value: "\(deterministicSignature.count) bytes"),
+                Argument(name: "message", type: "[UInt8]", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
+                Argument(name: "verified", type: "Bool", value: "\(deterministicVerified)")
+            ],
+            usageExample: usageExample(for: parameterSet))
         let randomizedVerified = publicKey.Verify(message: message, signature: randomizedSignature)
         let contextSignature = try secretKey.Sign(message: message, context: context, randomize: false)
         let contextVerified = publicKey.Verify(message: message, signature: contextSignature, context: context)
@@ -139,9 +204,9 @@ private struct SwiftDilithiumRunner {
         checks.append(RunnerSupport.check("malformed-public", parameterSet: parameterSet, category: "negative", status: RunnerSupport.pass(malformedPublicRejected), message: "A malformed raw public key is rejected"))
 
         let capabilities = [
-            RunnerSupport.capability("key-generation", status: "supported", origin: "native-api", evidence: "Dilithium.GenerateKeyPair(kind:)"),
-            RunnerSupport.capability("sign", status: "supported", origin: "native-api", evidence: "SecretKey.Sign(message:randomize:)"),
-            RunnerSupport.capability("verify", status: "supported", origin: "native-api", evidence: "PublicKey.Verify(message:signature:)"),
+            RunnerSupport.capability("key-generation", status: "supported", origin: "native-api", evidence: "Dilithium.GenerateKeyPair(kind:)", callSite: keyGenCallSite),
+            RunnerSupport.capability("sign", status: "supported", origin: "native-api", evidence: "SecretKey.Sign(message:randomize:)", callSite: signCallSite),
+            RunnerSupport.capability("verify", status: "supported", origin: "native-api", evidence: "PublicKey.Verify(message:signature:)", callSite: verifyCallSite),
             RunnerSupport.capability("raw-public", status: "supported", origin: "native-api", evidence: "PublicKey.keyBytes"),
             RunnerSupport.capability("raw-private-seed", status: "unsupported", origin: "native-api", evidence: "SecretKey API", reason: "No separate seed constructor or seed export is exposed"),
             RunnerSupport.capability("raw-private-expanded", status: "supported", origin: "native-api", evidence: "SecretKey.keyBytes"),

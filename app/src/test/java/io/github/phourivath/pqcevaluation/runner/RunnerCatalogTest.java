@@ -27,6 +27,7 @@ class RunnerCatalogTest {
             "bc-kotlin",
             "bc-lts",
             "jdk25",
+            "noble",
             "swift-cryptokit",
             "swift-dilithium");
     assertThat(descriptors)
@@ -49,6 +50,16 @@ class RunnerCatalogTest {
               assertThat(descriptor.availability()).isEqualTo("GATED");
               assertThat(descriptor.executionSupported()).isFalse();
               assertThat(descriptor.reason()).contains("does not provide ML-DSA");
+            });
+    assertThat(descriptors)
+        .filteredOn(descriptor -> descriptor.id().equals("noble"))
+        .singleElement()
+        .satisfies(
+            descriptor -> {
+              assertThat(descriptor.implementationId()).isEqualTo("noble-ml-dsa");
+              assertThat(descriptor.engineLineageId()).isEqualTo("noble-js");
+              assertThat(descriptor.availability()).isEqualTo("MISSING_ARTIFACT");
+              assertThat(descriptor.executionSupported()).isFalse();
             });
     assertThat(descriptors)
         .filteredOn(descriptor -> descriptor.id().equals("swift-cryptokit"))

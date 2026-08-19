@@ -1,0 +1,23 @@
+{
+  "name": "pqc-evaluation-noble-runner",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "check": "tsc --project tsconfig.json --noEmit",
+    "run": "node dist/main.js",
+    "test": "npm run build && node --test dist/test/evaluator.test.js"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.3.0",
+    "@noble/post-quantum": "0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "typescript": "6.0.2"
+  }
+}

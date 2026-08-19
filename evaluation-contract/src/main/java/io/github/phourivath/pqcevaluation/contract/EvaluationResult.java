@@ -60,7 +60,44 @@ public record EvaluationResult(
   }
 
   public record Capability(
-      String operation, String status, String origin, String evidence, String reason) {}
+      String operation,
+      String status,
+      String origin,
+      String evidence,
+      String reason,
+      CallSite callSite) {
+    public Capability(
+        String operation, String status, String origin, String evidence, String reason) {
+      this(operation, status, origin, evidence, reason, null);
+    }
+  }
+
+  public record CallSite(
+      String sourceFile,
+      String className,
+      String methodName,
+      int lineNumber,
+      String snippet,
+      int highlightLine,
+      List<Argument> arguments,
+      String usageExample) {
+    public CallSite {
+      arguments = arguments == null ? List.of() : List.copyOf(arguments);
+    }
+
+    public CallSite(
+        String sourceFile,
+        String className,
+        String methodName,
+        int lineNumber,
+        String snippet,
+        int highlightLine,
+        List<Argument> arguments) {
+      this(sourceFile, className, methodName, lineNumber, snippet, highlightLine, arguments, null);
+    }
+  }
+
+  public record Argument(String name, String type, String value) {}
 
   public record Representation(
       String kind,

@@ -59,6 +59,24 @@ export type CapabilityDetail = {
 	origin: string
 	evidence: string
 	reason: string | null
+	callSite: CallSiteDetail | null
+}
+
+export type CallSiteDetail = {
+	sourceFile: string
+	className: string
+	methodName: string
+	lineNumber: number
+	snippet: string
+	highlightLine: number
+	arguments: ArgumentDetail[]
+	usageExample?: string | null
+}
+
+export type ArgumentDetail = {
+	name: string
+	type: string
+	value: string
 }
 
 export type RepresentationDetail = {

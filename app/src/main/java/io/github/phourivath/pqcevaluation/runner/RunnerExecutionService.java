@@ -287,6 +287,9 @@ public class RunnerExecutionService {
     if (definition.launchKind() == RunnerLaunchKind.EXECUTABLE) {
       return List.of(definition.artifact().toString(), output.toString());
     }
+    if (definition.launchKind() == RunnerLaunchKind.NODE_SCRIPT) {
+      return List.of("node", definition.artifact().toString(), output.toString());
+    }
     var javaExecutable =
         Path.of(System.getProperty("java.home"), "bin", "java").toAbsolutePath().normalize();
     if (!Files.isRegularFile(javaExecutable)) {

@@ -1,3 +1,4 @@
+import { Dialog } from "@base-ui/react/dialog"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
@@ -11,6 +12,7 @@ import {
 import {
 	AlertCircle,
 	CheckCircle2,
+	ChevronRight,
 	ChevronsUpDown,
 	CircleDashed,
 	Info,
@@ -45,6 +47,7 @@ import {
 	TableRow,
 } from "@/components/ui/table"
 import {
+	type CallSiteDetail,
 	type ComparisonRow,
 	type EvaluationRun,
 	fetchComparisonRows,
@@ -611,166 +614,186 @@ function RunDetailPanel({
 		) ?? []
 
 	return (
-		<aside className="detail-panel" aria-label="Evaluation details">
-			<div className="detail-panel-header">
-				<div>
-					<div className="section-kicker">Selected evidence</div>
-					<h3>{row.parameterSet}</h3>
-					<p>{row.implementationName}</p>
-				</div>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					onClick={onClose}
-					aria-label="Close details"
-				>
-					<PanelRightClose className="size-4" />
-				</Button>
-			</div>
-
-			{isLoading && (
-				<div className="detail-loading">
-					<LoaderCircle className="size-4 animate-spin" /> Loading full result
-				</div>
-			)}
-			{error && (
-				<div className="detail-error">
-					Could not load the full result: {error.message}
-				</div>
-			)}
-			{parameterSet && (
-				<div className="detail-panel-body">
-					<div className="detail-note">
-						<Info className="size-4 shrink-0" />
-						<span>
-							FIPS sizes are normative expectations. An expected private size
-							does not mean this provider exposes private bytes.
-						</span>
+		<Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+			<Dialog.Portal>
+				<Dialog.Backdrop className="dialog-backdrop" />
+				<Dialog.Popup className="detail-panel" aria-label="Evaluation details">
+					<Dialog.Title className="sr-only">
+						Selected evidence for {row.implementationName} {row.parameterSet}
+					</Dialog.Title>
+					<div className="detail-panel-header">
+						<div>
+							<div className="section-kicker">Selected evidence</div>
+							<h3>{row.parameterSet}</h3>
+							<p>{row.implementationName}</p>
+						</div>
+						<Dialog.Close
+							render={
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Close details"
+								>
+									<PanelRightClose className="size-4" />
+								</Button>
+							}
+						/>
 					</div>
 
-					<DetailSection title="Checks">
-						<div className="detail-list">
-							{checks.map((check) => (
-								<div className="detail-list-row" key={check.id}>
-									<div>
-										<strong>{formatLabel(check.id)}</strong>
-										<span>{check.message}</span>
-									</div>
-									<StatusBadge status={check.status} />
-								</div>
-							))}
+					{isLoading && (
+						<div className="detail-loading">
+							<LoaderCircle className="size-4 animate-spin" /> Loading full
+							result
 						</div>
-					</DetailSection>
-
-					<DetailSection title="Capabilities">
-						<div className="detail-list">
-							{parameterSet.capabilities.map((capability) => (
-								<div className="detail-list-row" key={capability.operation}>
-									<div>
-										<strong>{formatLabel(capability.operation)}</strong>
-										<span>{capability.evidence}</span>
-										{capability.reason && <em>{capability.reason}</em>}
-									</div>
-									<StatusBadge status={capability.status} />
-								</div>
-							))}
+					)}
+					{error && (
+						<div className="detail-error">
+							Could not load the full result: {error.message}
 						</div>
-					</DetailSection>
-
-					<DetailSection title="Key representations">
-						<div className="detail-list">
-							{parameterSet.representations.map((representation) => (
-								<div
-									className="representation-detail"
-									key={representation.kind}
-								>
-									<div className="detail-list-row">
-										<strong>
-											{formatRepresentationKind(representation.kind)}
-										</strong>
-										<StatusBadge status={representation.status} />
-									</div>
-									<div className="representation-facts">
-										<span>
-											Observed size{" "}
-											<strong>
-												{representation.byteLength == null
-													? "not exposed"
-													: formatBytes(representation.byteLength)}
-											</strong>
-										</span>
-										<span>
-											Origin <strong>{representation.origin}</strong>
-										</span>
-										{representation.privateChoice && (
-											<span>
-												Private choice{" "}
-												<strong>{representation.privateChoice}</strong>
-											</span>
-										)}
-										{representation.algorithmOid && (
-											<span>
-												OID <strong>{representation.algorithmOid}</strong>
-											</span>
-										)}
-										{representation.parametersAbsent !== null && (
-											<span>
-												Parameters{" "}
-												<strong>
-													{representation.parametersAbsent
-														? "absent"
-														: "present"}
-												</strong>
-											</span>
-										)}
-									</div>
-									{representation.reason && <p>{representation.reason}</p>}
-								</div>
-							))}
-						</div>
-					</DetailSection>
-
-					<DetailSection title="Interoperability">
-						{interoperability.length === 0 ? (
-							<div className="detail-not-evaluated">
-								<CircleDashed className="size-4" />
+					)}
+					{parameterSet && (
+						<div className="detail-panel-body">
+							<div className="detail-note">
+								<Info className="size-4 shrink-0" />
 								<span>
-									Not evaluated yet. No producer/consumer interoperability
-									records exist for this run.
+									FIPS sizes are normative expectations. An expected private
+									size does not mean this provider exposes private bytes.
 								</span>
 							</div>
-						) : (
-							<div className="detail-list">
-								{interoperability.map((item) => (
-									<div
-										className="detail-list-row"
-										key={`${item.producer}-${item.consumer}-${item.mode}`}
-									>
-										<div>
-											<strong>
-												{item.producer} to {item.consumer}
-											</strong>
-											<span>{item.message}</span>
-										</div>
-										<StatusBadge status={item.status} />
-									</div>
-								))}
-							</div>
-						)}
-					</DetailSection>
 
-					{run?.warnings.length ? (
-						<DetailSection title="Warnings">
-							<ul className="detail-warnings">
-								{run.warnings.map((warning) => (
-									<li key={warning}>{warning}</li>
-								))}
-							</ul>
-						</DetailSection>
-					) : null}
-				</div>
-			)}
-		</aside>
+							<DetailSection title="Checks">
+								<div className="detail-list">
+									{checks.map((check) => (
+										<div className="detail-list-row" key={check.id}>
+											<div>
+												<strong>{formatLabel(check.id)}</strong>
+												<span>{check.message}</span>
+											</div>
+											<StatusBadge status={check.status} />
+										</div>
+									))}
+								</div>
+							</DetailSection>
+
+							<DetailSection title="Capabilities">
+								<div className="detail-list">
+									{parameterSet.capabilities.map((capability) => (
+										<div
+											className="capability-detail"
+											key={capability.operation}
+										>
+											<div className="detail-list-row">
+												<div>
+													<strong>{formatLabel(capability.operation)}</strong>
+													<span>{capability.evidence}</span>
+													{capability.reason && <em>{capability.reason}</em>}
+												</div>
+												<StatusBadge status={capability.status} />
+											</div>
+											{capability.callSite && (
+												<CodeEvidence callSite={capability.callSite} />
+											)}
+										</div>
+									))}
+								</div>
+							</DetailSection>
+
+							<DetailSection title="Key representations">
+								<div className="detail-list">
+									{parameterSet.representations.map((representation) => (
+										<div
+											className="representation-detail"
+											key={representation.kind}
+										>
+											<div className="detail-list-row">
+												<strong>
+													{formatRepresentationKind(representation.kind)}
+												</strong>
+												<StatusBadge status={representation.status} />
+											</div>
+											<div className="representation-facts">
+												<span>
+													Observed size{" "}
+													<strong>
+														{representation.byteLength == null
+															? "not exposed"
+															: formatBytes(representation.byteLength)}
+													</strong>
+												</span>
+												<span>
+													Origin <strong>{representation.origin}</strong>
+												</span>
+												{representation.privateChoice && (
+													<span>
+														Private choice{" "}
+														<strong>{representation.privateChoice}</strong>
+													</span>
+												)}
+												{representation.algorithmOid && (
+													<span>
+														OID <strong>{representation.algorithmOid}</strong>
+													</span>
+												)}
+												{representation.parametersAbsent !== null && (
+													<span>
+														Parameters{" "}
+														<strong>
+															{representation.parametersAbsent
+																? "absent"
+																: "present"}
+														</strong>
+													</span>
+												)}
+											</div>
+											{representation.reason && <p>{representation.reason}</p>}
+										</div>
+									))}
+								</div>
+							</DetailSection>
+
+							<DetailSection title="Interoperability">
+								{interoperability.length === 0 ? (
+									<div className="detail-not-evaluated">
+										<CircleDashed className="size-4" />
+										<span>
+											Not evaluated yet. No producer/consumer interoperability
+											records exist for this run.
+										</span>
+									</div>
+								) : (
+									<div className="detail-list">
+										{interoperability.map((item) => (
+											<div
+												className="detail-list-row"
+												key={`${item.producer}-${item.consumer}-${item.mode}`}
+											>
+												<div>
+													<strong>
+														{item.producer} to {item.consumer}
+													</strong>
+													<span>{item.message}</span>
+												</div>
+												<StatusBadge status={item.status} />
+											</div>
+										))}
+									</div>
+								)}
+							</DetailSection>
+
+							{run?.warnings.length ? (
+								<DetailSection title="Warnings">
+									<ul className="detail-warnings">
+										{run.warnings.map((warning) => (
+											<li key={warning}>{warning}</li>
+										))}
+									</ul>
+								</DetailSection>
+							) : null}
+						</div>
+					)}
+				</Dialog.Popup>
+			</Dialog.Portal>
+		</Dialog.Root>
 	)
 }
 
@@ -786,6 +809,70 @@ function DetailSection({
 			<h4>{title}</h4>
 			{children}
 		</section>
+	)
+}
+
+function CodeEvidence({ callSite }: { callSite: CallSiteDetail }) {
+	const firstLine = callSite.lineNumber - callSite.highlightLine + 1
+	const lines = callSite.snippet
+		.replace(/\n$/, "")
+		.split("\n")
+		.map((line, index) => ({ line, number: firstLine + index }))
+	const shortClassName =
+		callSite.className.split(".").pop() ?? callSite.className
+	return (
+		<details className="code-evidence">
+			<summary className="code-evidence-summary">
+				<ChevronRight className="code-evidence-chevron size-3.5" />
+				<span>
+					Code evidence — {callSite.sourceFile}:{callSite.lineNumber} ·{" "}
+					{shortClassName}.{callSite.methodName}()
+				</span>
+			</summary>
+			<div className="code-evidence-body">
+				{callSite.usageExample && (
+					<section
+						className="usage-example"
+						aria-label="Copyable usage example"
+					>
+						<div className="usage-example-title">Copyable usage example</div>
+						<pre className="usage-example-code">
+							<code>{callSite.usageExample.trim()}</code>
+						</pre>
+					</section>
+				)}
+				<section
+					className="code-block"
+					aria-label={`Source around ${callSite.sourceFile}:${callSite.lineNumber}`}
+				>
+					{lines.map((entry) => (
+						<div
+							className={
+								entry.number === callSite.lineNumber
+									? "code-line code-line-highlight"
+									: "code-line"
+							}
+							key={entry.number}
+						>
+							<span className="code-line-number">{entry.number}</span>
+							<code>{entry.line || " "}</code>
+						</div>
+					))}
+				</section>
+				{callSite.arguments.length > 0 && (
+					<div className="code-args">
+						<div className="code-args-title">Arguments passed</div>
+						{callSite.arguments.map((argument) => (
+							<div className="code-arg" key={argument.name}>
+								<span className="code-arg-name">{argument.name}</span>
+								<span className="code-arg-type">{argument.type}</span>
+								<span className="code-arg-value">{argument.value}</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+		</details>
 	)
 }
 

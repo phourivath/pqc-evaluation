@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Argument;
+import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CallSite;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Capability;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.CheckResult;
 import io.github.phourivath.pqcevaluation.contract.EvaluationResult.Implementation;
@@ -48,6 +50,29 @@ public final class BouncyCastleRunner {
           new Parameters("ML-DSA-44", 2, 1312, 2560, 2420),
           new Parameters("ML-DSA-65", 3, 1952, 4032, 3309),
           new Parameters("ML-DSA-87", 5, 2592, 4896, 4627));
+  private static final String KEY_GENERATION_SNIPPET =
+      """
+          // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
+          var generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
+          generator.initialize(parameterSpec);
+          var keyPair = generator.generateKeyPair();
+          """;
+  private static final String SIGN_SNIPPET =
+      """
+          // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
+          var signer = Signature.getInstance("ML-DSA", providerName);
+          signer.initSign(privateKey);
+          signer.update(MESSAGE);
+          var signatureBytes = signer.sign();
+          """;
+  private static final String VERIFY_SNIPPET =
+      """
+          // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
+          var verifier = Signature.getInstance("ML-DSA", providerName);
+          verifier.initVerify(publicKey);
+          verifier.update(MESSAGE);
+          var verified = verifier.verify(signatureBytes);
+          """;
 
   private BouncyCastleRunner() {}
 
@@ -102,9 +127,28 @@ public final class BouncyCastleRunner {
   private static ParameterSetResult evaluate(
       Parameters parameters, String providerName, List<CheckResult> checks) throws Exception {
     var parameterSpec = MLDSAParameterSpec.fromName(parameters.name());
+    var keyGenSite = Evidence.capture();
+    // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
     var generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
     generator.initialize(parameterSpec);
     var keyPair = generator.generateKeyPair();
+    var keyGenCallSite =
+        keyGenSite.with(
+            KEY_GENERATION_SNIPPET,
+            4,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument("provider", "java.lang.String", providerName),
+                new Argument(
+                    "parameterSpec",
+                    "org.bouncycastle.jcajce.spec.MLDSAParameterSpec",
+                    parameters.name()),
+                new Argument(
+                    "keyPair",
+                    "java.security.KeyPair",
+                    keyPair.getPublic().getClass().getSimpleName()
+                        + " + "
+                        + keyPair.getPrivate().getClass().getSimpleName())));
     var publicKey = (MLDSAPublicKey) keyPair.getPublic();
     var privateKey = (MLDSAPrivateKey) keyPair.getPrivate();
     var rawPublic = publicKey.getPublicData();
@@ -113,14 +157,52 @@ public final class BouncyCastleRunner {
     var spki = publicKey.getEncoded();
     var pkcs8 = privateKey.getEncoded();
 
+    var signSite = Evidence.capture();
+    // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
     var signer = Signature.getInstance("ML-DSA", providerName);
     signer.initSign(privateKey);
     signer.update(MESSAGE);
     var signatureBytes = signer.sign();
+    var signCallSite =
+        signSite.with(
+            SIGN_SNIPPET,
+            5,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument("provider", "java.lang.String", providerName),
+                new Argument(
+                    "key", "java.security.PrivateKey", privateKey.getClass().getName()),
+                new Argument(
+                    "message",
+                    "byte[]",
+                    new String(MESSAGE, StandardCharsets.UTF_8)
+                        + " ("
+                        + MESSAGE.length
+                        + " bytes UTF-8)"),
+                new Argument("signature", "byte[]", signatureBytes.length + " bytes")));
+    var verifySite = Evidence.capture();
+    // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
     var verifier = Signature.getInstance("ML-DSA", providerName);
     verifier.initVerify(publicKey);
     verifier.update(MESSAGE);
     var verified = verifier.verify(signatureBytes);
+    var verifyCallSite =
+        verifySite.with(
+            VERIFY_SNIPPET,
+            5,
+            List.of(
+                new Argument("algorithm", "java.lang.String", "ML-DSA"),
+                new Argument("provider", "java.lang.String", providerName),
+                new Argument("key", "java.security.PublicKey", publicKey.getClass().getName()),
+                new Argument(
+                    "message",
+                    "byte[]",
+                    new String(MESSAGE, StandardCharsets.UTF_8)
+                        + " ("
+                        + MESSAGE.length
+                        + " bytes UTF-8)"),
+                new Argument("signature", "byte[]", signatureBytes.length + " bytes"),
+                new Argument("verified", "boolean", String.valueOf(verified))));
 
     var keyFactory = KeyFactory.getInstance("ML-DSA", providerName);
     var importedPublic = (MLDSAPublicKey) keyFactory.generatePublic(new X509EncodedKeySpec(spki));
@@ -224,9 +306,10 @@ public final class BouncyCastleRunner {
 
     var capabilities =
         List.of(
-            new Capability("key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null),
-            new Capability("sign", "supported", "native-api", "Signature ML-DSA", null),
-            new Capability("verify", "supported", "native-api", "Signature ML-DSA", null),
+            new Capability(
+                "key-generation", "supported", "native-api", "KeyPairGenerator ML-DSA", null, keyGenCallSite),
+            new Capability("sign", "supported", "native-api", "Signature ML-DSA", null, signCallSite),
+            new Capability("verify", "supported", "native-api", "Signature ML-DSA", null, verifyCallSite),
             new Capability("raw-public", "supported", "native-api", "MLDSAPublicKey.getPublicData", null),
             new Capability(
                 "raw-private-seed", "supported", "native-api", "MLDSAPrivateKey.getSeed", null),
@@ -315,6 +398,39 @@ public final class BouncyCastleRunner {
 
   private static String sha256(byte[] bytes) throws Exception {
     return HEX.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+  }
+
+  /** Captures the runner's own call-site coordinates (file, class, method, line). */
+  private static final class Evidence {
+    private Evidence() {}
+
+    static Coordinates capture() {
+      var owner = BouncyCastleRunner.class.getName();
+      for (var frame : Thread.currentThread().getStackTrace()) {
+        if (owner.equals(frame.getClassName()) && !"capture".equals(frame.getMethodName())) {
+          return new Coordinates(
+              frame.getFileName(),
+              frame.getClassName(),
+              frame.getMethodName(),
+              frame.getLineNumber());
+        }
+      }
+      throw new IllegalStateException("No runner frame on the call stack");
+    }
+
+    record Coordinates(
+        String sourceFile, String className, String methodName, int lineNumber) {
+      CallSite with(String snippet, int highlightLine, List<Argument> arguments) {
+        return new CallSite(
+            sourceFile,
+            className,
+            methodName,
+            lineNumber + highlightLine,
+            snippet,
+            highlightLine,
+            arguments);
+      }
+    }
   }
 
   private static String oid(String parameterSet) {

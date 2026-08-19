@@ -94,13 +94,27 @@ public enum RunnerSupport {
         status: String,
         origin: String,
         evidence: String,
-        reason: String? = nil) -> Capability {
+        reason: String? = nil,
+        callSite: CallSite? = nil) -> Capability {
         Capability(
             operation: operation,
             status: status,
             origin: origin,
             evidence: evidence,
-            reason: reason)
+            reason: reason,
+            callSite: callSite)
+    }
+
+    public static func captureCallSiteLocation(
+        className: String,
+        fileID: String = #fileID,
+        function: String = #function,
+        line: Int = #line) -> CallSiteLocation {
+        CallSiteLocation(
+            sourceFile: fileID,
+            className: className,
+            methodName: function,
+            lineNumber: line)
     }
 
     public static func pass(_ value: Bool) -> String { value ? "pass" : "fail" }

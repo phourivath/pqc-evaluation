@@ -139,18 +139,86 @@ public struct Capability: Codable, Sendable {
     public let origin: String
     public let evidence: String
     public let reason: String?
+    public let callSite: CallSite?
 
     public init(
         operation: String,
         status: String,
         origin: String,
         evidence: String,
-        reason: String? = nil) {
+        reason: String? = nil,
+        callSite: CallSite? = nil) {
         self.operation = operation
         self.status = status
         self.origin = origin
         self.evidence = evidence
         self.reason = reason
+        self.callSite = callSite
+    }
+}
+
+public struct CallSite: Codable, Sendable {
+    public let sourceFile: String
+    public let className: String
+    public let methodName: String
+    public let lineNumber: Int
+    public let snippet: String
+    public let highlightLine: Int
+    public let arguments: [Argument]
+    public let usageExample: String?
+
+    public init(
+        sourceFile: String,
+        className: String,
+        methodName: String,
+        lineNumber: Int,
+        snippet: String,
+        highlightLine: Int,
+        arguments: [Argument],
+        usageExample: String? = nil) {
+        self.sourceFile = sourceFile
+        self.className = className
+        self.methodName = methodName
+        self.lineNumber = lineNumber
+        self.snippet = snippet
+        self.highlightLine = highlightLine
+        self.arguments = arguments
+        self.usageExample = usageExample
+    }
+}
+
+public struct CallSiteLocation: Sendable {
+    public let sourceFile: String
+    public let className: String
+    public let methodName: String
+    public let lineNumber: Int
+
+    public func with(
+        snippet: String,
+        highlightLine: Int,
+        arguments: [Argument],
+        usageExample: String? = nil) -> CallSite {
+        CallSite(
+            sourceFile: sourceFile,
+            className: className,
+            methodName: methodName,
+            lineNumber: lineNumber + highlightLine,
+            snippet: snippet,
+            highlightLine: highlightLine,
+            arguments: arguments,
+            usageExample: usageExample)
+    }
+}
+
+public struct Argument: Codable, Sendable {
+    public let name: String
+    public let type: String
+    public let value: String
+
+    public init(name: String, type: String, value: String) {
+        self.name = name
+        self.type = type
+        self.value = value
     }
 }
 
