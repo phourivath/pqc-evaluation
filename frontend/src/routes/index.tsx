@@ -108,28 +108,6 @@ const comparisonColumns = columnHelper.columns([
 			</div>
 		),
 	}),
-	columnHelper.accessor("rawPublicKeyBytes", {
-		id: "sizes",
-		header: "FIPS expected sizes",
-		sortFn: (a, b) =>
-			a.original.rawPublicKeyBytes - b.original.rawPublicKeyBytes,
-		cell: ({ row }) => (
-			<div className="grid min-w-40 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-				<span className="text-muted-foreground">public</span>
-				<span className="font-mono text-right">
-					{formatBytes(row.original.rawPublicKeyBytes)}
-				</span>
-				<span className="text-muted-foreground">expanded private</span>
-				<span className="font-mono text-right">
-					{formatBytes(row.original.rawPrivateExpandedBytes)}
-				</span>
-				<span className="text-muted-foreground">signature</span>
-				<span className="font-mono text-right">
-					{formatBytes(row.original.rawSignatureBytes)}
-				</span>
-			</div>
-		),
-	}),
 	columnHelper.accessor("availableRepresentations", {
 		id: "representations",
 		header: "Formats",
@@ -141,38 +119,17 @@ const comparisonColumns = columnHelper.columns([
 							{formatRepresentationKind(kind)}
 						</Badge>
 					))}
+					{row.original.unavailableRepresentations.map((kind) => (
+						<Badge
+							key={kind}
+							variant="outline"
+							className="border-dashed text-muted-foreground"
+						>
+							{formatRepresentationKind(kind)}
+						</Badge>
+					))}
 				</div>
-				{row.original.unavailableRepresentations.length > 0 && (
-					<span className="text-xs text-amber-700">
-						{row.original.unavailableRepresentations.length} unavailable
-					</span>
-				)}
 			</div>
-		),
-	}),
-	columnHelper.accessor("checksFailed", {
-		id: "checks",
-		header: "Checks",
-		sortFn: (a, b) => a.original.checksFailed - b.original.checksFailed,
-		cell: ({ row }) => (
-			<ResultSummary
-				passed={row.original.checksPassed}
-				failed={row.original.checksFailed}
-				unsupported={row.original.checksUnsupported}
-			/>
-		),
-	}),
-	columnHelper.accessor("interopFailed", {
-		id: "interop",
-		header: "Interop",
-		sortFn: (a, b) => a.original.interopFailed - b.original.interopFailed,
-		cell: ({ row }) => (
-			<ResultSummary
-				passed={row.original.interopPassed}
-				failed={row.original.interopFailed}
-				unsupported={row.original.interopUnsupported}
-				emptyLabel="not evaluated"
-			/>
 		),
 	}),
 	columnHelper.accessor("generatedAt", {
@@ -606,8 +563,6 @@ function RunDetailPanel({
 	const parameterSet = run?.parameterSets.find(
 		(value) => value.parameterSet === row.parameterSet,
 	)
-	const checks =
-		run?.checks.filter((check) => check.parameterSet === row.parameterSet) ?? []
 	const interoperability =
 		run?.interoperability.filter(
 			(item) => item.parameterSet === row.parameterSet,
@@ -660,20 +615,6 @@ function RunDetailPanel({
 									size does not mean this provider exposes private bytes.
 								</span>
 							</div>
-
-							<DetailSection title="Checks">
-								<div className="detail-list">
-									{checks.map((check) => (
-										<div className="detail-list-row" key={check.id}>
-											<div>
-												<strong>{formatLabel(check.id)}</strong>
-												<span>{check.message}</span>
-											</div>
-											<StatusBadge status={check.status} />
-										</div>
-									))}
-								</div>
-							</DetailSection>
 
 							<DetailSection title="Capabilities">
 								<div className="detail-list">
@@ -1007,30 +948,6 @@ function AssuranceBadge({ status }: { status: string }) {
 		<Badge variant={isPlatform ? "success" : "warning"}>
 			{isPlatform ? "platform" : "third-party"}
 		</Badge>
-	)
-}
-
-function ResultSummary({
-	passed,
-	failed,
-	unsupported,
-	emptyLabel = "",
-}: {
-	passed: number
-	failed: number
-	unsupported: number
-	emptyLabel?: string
-}) {
-	if (passed === 0 && failed === 0 && unsupported === 0 && emptyLabel)
-		return <span className="text-xs text-muted-foreground">{emptyLabel}</span>
-	return (
-		<div className="result-summary">
-			<span className="result-pass">{passed} pass</span>
-			{failed > 0 && <span className="result-fail">{failed} fail</span>}
-			{unsupported > 0 && (
-				<span className="result-unsupported">{unsupported} unsupported</span>
-			)}
-		</div>
 	)
 }
 
