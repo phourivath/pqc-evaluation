@@ -18,7 +18,7 @@ let package = Package(
         .executableTarget(
             name: "SwiftDilithiumRunner",
             dependencies: [
-                .product(name: "PqcEvaluationSwiftSupport", package: "PqcEvaluationSwiftSupport"),
+                .product(name: "PqcEvaluationSwiftSupport", package: "common"),
                 .product(name: "SwiftDilithium", package: "SwiftDilithium")
             ]),
         .testTarget(

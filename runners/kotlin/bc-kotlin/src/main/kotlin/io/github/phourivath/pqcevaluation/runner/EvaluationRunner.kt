@@ -254,7 +254,7 @@ internal class EvaluationRunner(private val output: Path) {
                     "pkcs8",
                     status(pkcs8AlgorithmValid),
                     pkcs8.size,
-                    sha256(pkcs8),
+                    null,
                     pkcs8Algorithm.oid,
                     pkcs8Algorithm.parametersAbsent,
                     Der.privateChoice(pkcs8),

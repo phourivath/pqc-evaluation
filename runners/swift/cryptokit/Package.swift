@@ -15,7 +15,7 @@ let package = Package(
         .executableTarget(
             name: "CryptoKitRunner",
             dependencies: [
-                .product(name: "PqcEvaluationSwiftSupport", package: "PqcEvaluationSwiftSupport")
+                .product(name: "PqcEvaluationSwiftSupport", package: "common")
             ]),
         .testTarget(
             name: "CryptoKitRunnerTests",

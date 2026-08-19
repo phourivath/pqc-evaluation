@@ -291,7 +291,7 @@ public final class BouncyCastleRunner {
                  "pkcs8",
                  pkcs8AlgorithmValid ? "pass" : "fail",
                  pkcs8.length,
-                 sha256(pkcs8),
+                 null,
                  pkcs8Algorithm.oid(),
                  pkcs8Algorithm.parametersAbsent(),
                  pkcs8PrivateChoice,
