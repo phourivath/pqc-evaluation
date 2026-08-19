@@ -41,43 +41,19 @@ private struct CryptoKitRunner {
     private let context = RunnerSupport.context
 
     private let keyGenerationSnippet = """
-                // [evidence:key-generation] evaluate(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey()
-                let key = try generate()
+                // [evidence:key-generation] evaluate<Key, PublicKey>(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey() -> Key
+                let key: Key = try generate()
         """
 
     private let signSnippet = """
-                // [evidence:sign] evaluate(sign:) delegates to PrivateKey.signature(for:)
-                let signature = try sign(key, message)
+                // [evidence:sign] evaluate<Key, PublicKey>(sign:) delegates to PrivateKey.signature(for:) -> Data
+                let signature: Data = try sign(key, message)
         """
 
     private let verifySnippet = """
-                // [evidence:verify] evaluate(verify:) delegates to PublicKey.isValidSignature(_:for:)
-                let verified = verify(publicKeyValue, signature, message)
+                // [evidence:verify] evaluate<Key, PublicKey>(verify:) delegates to PublicKey.isValidSignature(_:for:) -> Bool
+                let verified: Bool = verify(publicKeyValue, signature, message)
         """
-
-    private func usageExample(for parameterSet: ParameterSet) -> String {
-        let keyType: String
-        switch parameterSet {
-        case .mldsa65:
-            keyType = "MLDSA65"
-        case .mldsa87:
-            keyType = "MLDSA87"
-        case .mldsa44:
-            preconditionFailure("CryptoKit does not support ML-DSA-44")
-        }
-        return """
-        import CryptoKit
-        import Foundation
-
-        @available(macOS 26.0, *)
-        func signAndVerify() throws {
-            let privateKey = try \(keyType).PrivateKey()
-            let message = Data("PQC evaluation message".utf8)
-            let signature = try privateKey.signature(for: message)
-            let verified = privateKey.publicKey.isValidSignature(signature, for: message)
-        }
-        """
-    }
 
     func run(outputPath: String) throws {
         var checks: [CheckResult] = []
@@ -213,23 +189,22 @@ private struct CryptoKitRunner {
         publicKeyFromRaw: (Data) throws -> PublicKey,
         checks: inout [CheckResult]) throws -> ParameterSetResult {
         let keyGenSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
-        // [evidence:key-generation] evaluate(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey()
-        let key = try generate()
+        // [evidence:key-generation] evaluate<Key, PublicKey>(generate:) delegates to MLDSA65.PrivateKey() / MLDSA87.PrivateKey() -> Key
+        let key: Key = try generate()
         let keyGenCallSite = keyGenSite.with(
             snippet: keyGenerationSnippet,
             highlightLine: 2,
             arguments: [
                 Argument(name: "algorithm", type: "String", value: "ML-DSA"),
                 Argument(name: "key", type: String(describing: type(of: key)), value: parameterSet.rawValue)
-            ],
-            usageExample: usageExample(for: parameterSet))
+            ])
         let publicKeyValue = publicKey(key)
         let rawPublicValue = rawPublic(key)
         let seedValue = seed(key)
         let integrityValue = integrity(key)
         let signSite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
-        // [evidence:sign] evaluate(sign:) delegates to PrivateKey.signature(for:)
-        let signature = try sign(key, message)
+        // [evidence:sign] evaluate<Key, PublicKey>(sign:) delegates to PrivateKey.signature(for:) -> Data
+        let signature: Data = try sign(key, message)
         let signCallSite = signSite.with(
             snippet: signSnippet,
             highlightLine: 2,
@@ -238,11 +213,10 @@ private struct CryptoKitRunner {
                 Argument(name: "key", type: String(describing: type(of: key)), value: parameterSet.rawValue),
                 Argument(name: "message", type: "Data", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
                 Argument(name: "signature", type: "Data", value: "\(signature.count) bytes")
-            ],
-            usageExample: usageExample(for: parameterSet))
+            ])
         let verifySite = RunnerSupport.captureCallSiteLocation(className: String(describing: Self.self))
-        // [evidence:verify] evaluate(verify:) delegates to PublicKey.isValidSignature(_:for:)
-        let verified = verify(publicKeyValue, signature, message)
+        // [evidence:verify] evaluate<Key, PublicKey>(verify:) delegates to PublicKey.isValidSignature(_:for:) -> Bool
+        let verified: Bool = verify(publicKeyValue, signature, message)
         let verifyCallSite = verifySite.with(
             snippet: verifySnippet,
             highlightLine: 2,
@@ -252,8 +226,7 @@ private struct CryptoKitRunner {
                 Argument(name: "signature", type: "Data", value: "\(signature.count) bytes"),
                 Argument(name: "message", type: "Data", value: String(decoding: message, as: UTF8.self) + " (\(message.count) bytes UTF-8)"),
                 Argument(name: "verified", type: "Bool", value: "\(verified)")
-            ],
-            usageExample: usageExample(for: parameterSet))
+            ])
         let contextSignature = try signContext(key, message, context)
         let contextVerified = verifyContext(publicKeyValue, contextSignature, message, context)
 

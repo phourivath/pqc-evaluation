@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.nio.file.Files
 import java.security.KeyFactory
+import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.Security
@@ -83,10 +84,10 @@ internal class EvaluationRunner(private val output: Path) {
     ): ParameterSetResult {
         val parameterSpec = MLDSAParameterSpec.fromName(parameters.name)
         val keyGenSite = captureCallSite()
-        // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
-        val generator = KeyPairGenerator.getInstance("ML-DSA", providerName)
+        // [evidence:key-generation] java.security.KeyPairGenerator (BC provider): getInstance("ML-DSA", providerName), initialize(MLDSAParameterSpec); generateKeyPair() -> java.security.KeyPair
+        val generator: KeyPairGenerator = KeyPairGenerator.getInstance("ML-DSA", providerName)
         generator.initialize(parameterSpec)
-        val keyPair = generator.generateKeyPair()
+        val keyPair: KeyPair = generator.generateKeyPair()
         val keyGenCallSite =
             keyGenSite.with(
                 KEY_GENERATION_SNIPPET,
@@ -111,11 +112,11 @@ internal class EvaluationRunner(private val output: Path) {
         val pkcs8 = privateKey.encoded
 
         val signSite = captureCallSite()
-        // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
-        val signer = Signature.getInstance("ML-DSA", providerName)
+        // [evidence:sign] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+        val signer: Signature = Signature.getInstance("ML-DSA", providerName)
         signer.initSign(privateKey)
         signer.update(MESSAGE)
-        val signatureBytes = signer.sign()
+        val signatureBytes: ByteArray = signer.sign()
         val signCallSite =
             signSite.with(
                 SIGN_SNIPPET,
@@ -131,11 +132,11 @@ internal class EvaluationRunner(private val output: Path) {
                     Argument("signature", "byte[]", "${signatureBytes.size} bytes")))
 
         val verifySite = captureCallSite()
-        // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
-        val verifier = Signature.getInstance("ML-DSA", providerName)
+        // [evidence:verify] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+        val verifier: Signature = Signature.getInstance("ML-DSA", providerName)
         verifier.initVerify(publicKey)
         verifier.update(MESSAGE)
-        val verified = verifier.verify(signatureBytes)
+        val verified: Boolean = verifier.verify(signatureBytes)
         val verifyCallSite =
             verifySite.with(
                 VERIFY_SNIPPET,
@@ -498,26 +499,26 @@ internal class EvaluationRunner(private val output: Path) {
         val CONTEXT = "pqc-evaluation".toByteArray(StandardCharsets.UTF_8)
         val KEY_GENERATION_SNIPPET =
             """
-                // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
-                val generator = KeyPairGenerator.getInstance("ML-DSA", providerName)
+                // [evidence:key-generation] java.security.KeyPairGenerator (BC provider): getInstance("ML-DSA", providerName), initialize(MLDSAParameterSpec); generateKeyPair() -> java.security.KeyPair
+                val generator: KeyPairGenerator = KeyPairGenerator.getInstance("ML-DSA", providerName)
                 generator.initialize(parameterSpec)
-                val keyPair = generator.generateKeyPair()
+                val keyPair: KeyPair = generator.generateKeyPair()
             """.trimIndent()
         val SIGN_SNIPPET =
             """
-                // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
-                val signer = Signature.getInstance("ML-DSA", providerName)
+                // [evidence:sign] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+                val signer: Signature = Signature.getInstance("ML-DSA", providerName)
                 signer.initSign(privateKey)
                 signer.update(MESSAGE)
-                val signatureBytes = signer.sign()
+                val signatureBytes: ByteArray = signer.sign()
             """.trimIndent()
         val VERIFY_SNIPPET =
             """
-                // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
-                val verifier = Signature.getInstance("ML-DSA", providerName)
+                // [evidence:verify] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+                val verifier: Signature = Signature.getInstance("ML-DSA", providerName)
                 verifier.initVerify(publicKey)
                 verifier.update(MESSAGE)
-                val verified = verifier.verify(signatureBytes)
+                val verified: Boolean = verifier.verify(signatureBytes)
             """.trimIndent()
         val PARAMETERS =
             listOf(

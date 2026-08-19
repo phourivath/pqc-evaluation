@@ -40,26 +40,26 @@ public final class Jdk25Runner {
           new Parameters("ML-DSA-87", 5, 2592, 4896, 4627));
   private static final String KEY_GENERATION_SNIPPET =
       """
-          // [evidence:key-generation] KeyPairGenerator ML-DSA (SUN provider): initialize(spec), generateKeyPair()
-          var generator = KeyPairGenerator.getInstance("ML-DSA");
+          // [evidence:key-generation] java.security.KeyPairGenerator (SUN provider): getInstance("ML-DSA"), initialize(NamedParameterSpec); generateKeyPair() -> java.security.KeyPair
+          KeyPairGenerator generator = KeyPairGenerator.getInstance("ML-DSA");
           generator.initialize(new NamedParameterSpec(parameters.name()));
-          var keyPair = generator.generateKeyPair();
+          KeyPair keyPair = generator.generateKeyPair();
           """;
   private static final String SIGN_SNIPPET =
       """
-          // [evidence:sign] Signature ML-DSA (SUN provider): initSign(privateKey), update(message), sign()
-          var signature = Signature.getInstance("ML-DSA");
+          // [evidence:sign] java.security.Signature (SUN provider): getInstance("ML-DSA"), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+          Signature signature = Signature.getInstance("ML-DSA");
           signature.initSign(keyPair.getPrivate());
           signature.update(message);
-          var signatureBytes = signature.sign();
+          byte[] signatureBytes = signature.sign();
           """;
   private static final String VERIFY_SNIPPET =
       """
-          // [evidence:verify] Signature ML-DSA (SUN provider): initVerify(publicKey), update(message), verify(signature)
-          var verifier = Signature.getInstance("ML-DSA");
+          // [evidence:verify] java.security.Signature (SUN provider): getInstance("ML-DSA"), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+          Signature verifier = Signature.getInstance("ML-DSA");
           verifier.initVerify(keyPair.getPublic());
           verifier.update(message);
-          var verified = verifier.verify(signatureBytes);
+          boolean verified = verifier.verify(signatureBytes);
           """;
 
   private Jdk25Runner() {}
@@ -114,10 +114,10 @@ public final class Jdk25Runner {
       throws Exception {
     var message = "PQC evaluation message".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     var keyGenSite = Evidence.capture();
-    // [evidence:key-generation] KeyPairGenerator ML-DSA (SUN provider): initialize(spec), generateKeyPair()
-    var generator = KeyPairGenerator.getInstance("ML-DSA");
+    // [evidence:key-generation] java.security.KeyPairGenerator (SUN provider): getInstance("ML-DSA"), initialize(NamedParameterSpec); generateKeyPair() -> java.security.KeyPair
+    KeyPairGenerator generator = KeyPairGenerator.getInstance("ML-DSA");
     generator.initialize(new NamedParameterSpec(parameters.name()));
-    var keyPair = generator.generateKeyPair();
+    KeyPair keyPair = generator.generateKeyPair();
     var keyGenCallSite =
         keyGenSite.with(
             KEY_GENERATION_SNIPPET,
@@ -135,11 +135,11 @@ public final class Jdk25Runner {
                         + " + "
                         + keyPair.getPrivate().getClass().getSimpleName())));
     var signSite = Evidence.capture();
-    // [evidence:sign] Signature ML-DSA (SUN provider): initSign(privateKey), update(message), sign()
-    var signature = Signature.getInstance("ML-DSA");
+    // [evidence:sign] java.security.Signature (SUN provider): getInstance("ML-DSA"), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+    Signature signature = Signature.getInstance("ML-DSA");
     signature.initSign(keyPair.getPrivate());
     signature.update(message);
-    var signatureBytes = signature.sign();
+    byte[] signatureBytes = signature.sign();
     var signCallSite =
         signSite.with(
             SIGN_SNIPPET,
@@ -157,11 +157,11 @@ public final class Jdk25Runner {
                         + " bytes UTF-8)"),
                 new Argument("signature", "byte[]", signatureBytes.length + " bytes")));
     var verifySite = Evidence.capture();
-    // [evidence:verify] Signature ML-DSA (SUN provider): initVerify(publicKey), update(message), verify(signature)
-    var verifier = Signature.getInstance("ML-DSA");
+    // [evidence:verify] java.security.Signature (SUN provider): getInstance("ML-DSA"), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+    Signature verifier = Signature.getInstance("ML-DSA");
     verifier.initVerify(keyPair.getPublic());
     verifier.update(message);
-    var verified = verifier.verify(signatureBytes);
+    boolean verified = verifier.verify(signatureBytes);
     var verifyCallSite =
         verifySite.with(
             VERIFY_SNIPPET,

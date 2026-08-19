@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto"
 import { release } from "node:os"
 
+import type { Signer } from "@noble/post-quantum/utils.js"
+
 import type {
 	Argument,
 	CallSite,
@@ -24,16 +26,16 @@ const WRONG_MESSAGE = new TextEncoder().encode("PQC evaluation message altered")
 const SOURCE_FILE = "runners/javascript/noble/src/evaluator.ts"
 const CLASS_NAME = "NobleMlDsaEvaluator"
 
-const KEY_GENERATION_SNIPPET = `// [evidence:key-generation] @noble/post-quantum seeded keygen
-const { secretKey, publicKey } = spec.algorithm.keygen(seed);`
-const SIGN_SNIPPET = `// [evidence:sign] @noble/post-quantum deterministic sign
-const signature = spec.algorithm.sign(MESSAGE, secretKey, {
+const KEY_GENERATION_SNIPPET = `// [evidence:key-generation] @noble/post-quantum ml-dsa keygen(seed) -> CryptoKeys { secretKey: Uint8Array; publicKey: Uint8Array }
+const { secretKey, publicKey }: { secretKey: Uint8Array; publicKey: Uint8Array } = spec.algorithm.keygen(seed)`
+const SIGN_SNIPPET = `// [evidence:sign] @noble/post-quantum ml-dsa sign(message, secretKey, { extraEntropy: false }) -> Uint8Array (deterministic)
+const signature: Uint8Array = spec.algorithm.sign(MESSAGE, secretKey, {
   extraEntropy: false,
-});`
-const VERIFY_SNIPPET = `// [evidence:verify] @noble/post-quantum verify
-const verified = spec.algorithm.verify(signature, MESSAGE, publicKey);`
-const PREHASH_SNIPPET = `// [evidence:hash-ml-dsa] @noble/post-quantum HashML-DSA prehash
-const prehashSigner = spec.algorithm.prehash(spec.prehash);`
+})`
+const VERIFY_SNIPPET = `// [evidence:verify] @noble/post-quantum ml-dsa verify(signature, message, publicKey) -> boolean
+const verified: boolean = spec.algorithm.verify(signature, MESSAGE, publicKey)`
+const PREHASH_SNIPPET = `// [evidence:hash-ml-dsa] @noble/post-quantum ml-dsa prehash(hash) -> Signer (HashML-DSA)
+const prehashSigner: Signer = spec.algorithm.prehash(spec.prehash)`
 
 export function evaluateAll(): EvaluationResult {
 	const checks: CheckResult[] = []
@@ -90,7 +92,7 @@ export function evaluateParameterSet(
 	const seed = fixtureSeed(spec)
 	const keyGenerationCallSite = makeCallSite(
 		"evaluateParameterSet",
-		104,
+		106,
 		KEY_GENERATION_SNIPPET,
 		2,
 		[
@@ -100,13 +102,13 @@ export function evaluateParameterSet(
 		],
 	)
 
-	// [evidence:key-generation] @noble/post-quantum seeded keygen
-	const { secretKey, publicKey } = spec.algorithm.keygen(seed)
+	// [evidence:key-generation] @noble/post-quantum ml-dsa keygen(seed) -> CryptoKeys { secretKey: Uint8Array; publicKey: Uint8Array }
+	const { secretKey, publicKey }: { secretKey: Uint8Array; publicKey: Uint8Array } = spec.algorithm.keygen(seed)
 	const derivedPublicKey = spec.algorithm.getPublicKey(secretKey)
 
 	const signCallSite = makeCallSite(
 		"evaluateParameterSet",
-		125,
+		127,
 		SIGN_SNIPPET,
 		2,
 		[
@@ -121,16 +123,16 @@ export function evaluateParameterSet(
 		],
 	)
 
-	// [evidence:sign] @noble/post-quantum deterministic sign
-	const signature = spec.algorithm.sign(MESSAGE, secretKey, {
+	// [evidence:sign] @noble/post-quantum ml-dsa sign(message, secretKey, { extraEntropy: false }) -> Uint8Array (deterministic)
+	const signature: Uint8Array = spec.algorithm.sign(MESSAGE, secretKey, {
 		extraEntropy: false,
 	})
 
-	// [evidence:verify] @noble/post-quantum verify
-	const verified = spec.algorithm.verify(signature, MESSAGE, publicKey)
+	// [evidence:verify] @noble/post-quantum ml-dsa verify(signature, message, publicKey) -> boolean
+	const verified: boolean = spec.algorithm.verify(signature, MESSAGE, publicKey)
 	const verifyCallSite = makeCallSite(
 		"evaluateParameterSet",
-		130,
+		132,
 		VERIFY_SNIPPET,
 		2,
 		[
@@ -181,11 +183,11 @@ export function evaluateParameterSet(
 	)
 
 	const reconstructed = spec.algorithm.keygen(seed)
-	// [evidence:hash-ml-dsa] @noble/post-quantum HashML-DSA prehash
-	const prehashSigner = spec.algorithm.prehash(spec.prehash)
+	// [evidence:hash-ml-dsa] @noble/post-quantum ml-dsa prehash(hash) -> Signer (HashML-DSA)
+	const prehashSigner: Signer = spec.algorithm.prehash(spec.prehash)
 	const prehashCallSite = makeCallSite(
 		"evaluateParameterSet",
-		185,
+		187,
 		PREHASH_SNIPPET,
 		2,
 		[

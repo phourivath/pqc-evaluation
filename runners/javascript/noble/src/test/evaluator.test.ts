@@ -1,4 +1,5 @@
 import { deepStrictEqual, equal, match, ok } from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
 import { evaluateAll } from "../evaluator.js"
@@ -56,5 +57,30 @@ test("records source snippets without private key material", () => {
 		match(callSite.snippet, /\[evidence:/)
 		ok(callSite.arguments.every((argument) => !argument.value.includes("secretKey:")))
 		ok(callSite.arguments.every((argument) => !argument.value.match(/^[0-9a-f]{64,}$/i)))
+	}
+})
+
+test("call-site snippets match the source lines they point at", () => {
+	const sourceUrl = new URL("../../src/evaluator.ts", import.meta.url)
+	const sourceLines = readFileSync(sourceUrl, "utf8").split("\n")
+	const callSites = evaluateAll().parameterSets.flatMap((parameterSet) =>
+		parameterSet.capabilities.flatMap((capability) =>
+			capability.callSite ? [capability.callSite] : [],
+		),
+	)
+
+	equal(callSites.length, 12)
+	for (const callSite of callSites) {
+		const firstLine = callSite.lineNumber - callSite.highlightLine + 1
+		const snippetLines = callSite.snippet.replace(/\n$/, "").split("\n")
+		const sourceSlice = sourceLines.slice(
+			firstLine - 1,
+			firstLine - 1 + snippetLines.length,
+		)
+		deepStrictEqual(
+			sourceSlice.map((line) => line.trim()),
+			snippetLines.map((line) => line.trim()),
+			`${callSite.sourceFile}:${callSite.lineNumber} snippet desynced from source`,
+		)
 	}
 })

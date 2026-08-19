@@ -52,26 +52,26 @@ public final class BouncyCastleRunner {
           new Parameters("ML-DSA-87", 5, 2592, 4896, 4627));
   private static final String KEY_GENERATION_SNIPPET =
       """
-          // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
-          var generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
+          // [evidence:key-generation] java.security.KeyPairGenerator (BC provider): getInstance("ML-DSA", providerName), initialize(MLDSAParameterSpec); generateKeyPair() -> java.security.KeyPair
+          KeyPairGenerator generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
           generator.initialize(parameterSpec);
-          var keyPair = generator.generateKeyPair();
+          KeyPair keyPair = generator.generateKeyPair();
           """;
   private static final String SIGN_SNIPPET =
       """
-          // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
-          var signer = Signature.getInstance("ML-DSA", providerName);
+          // [evidence:sign] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+          Signature signer = Signature.getInstance("ML-DSA", providerName);
           signer.initSign(privateKey);
           signer.update(MESSAGE);
-          var signatureBytes = signer.sign();
+          byte[] signatureBytes = signer.sign();
           """;
   private static final String VERIFY_SNIPPET =
       """
-          // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
-          var verifier = Signature.getInstance("ML-DSA", providerName);
+          // [evidence:verify] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+          Signature verifier = Signature.getInstance("ML-DSA", providerName);
           verifier.initVerify(publicKey);
           verifier.update(MESSAGE);
-          var verified = verifier.verify(signatureBytes);
+          boolean verified = verifier.verify(signatureBytes);
           """;
 
   private BouncyCastleRunner() {}
@@ -126,12 +126,12 @@ public final class BouncyCastleRunner {
 
   private static ParameterSetResult evaluate(
       Parameters parameters, String providerName, List<CheckResult> checks) throws Exception {
-    var parameterSpec = MLDSAParameterSpec.fromName(parameters.name());
+    MLDSAParameterSpec parameterSpec = MLDSAParameterSpec.fromName(parameters.name());
     var keyGenSite = Evidence.capture();
-    // [evidence:key-generation] KeyPairGenerator ML-DSA (BC provider): initialize(spec), generateKeyPair()
-    var generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
+    // [evidence:key-generation] java.security.KeyPairGenerator (BC provider): getInstance("ML-DSA", providerName), initialize(MLDSAParameterSpec); generateKeyPair() -> java.security.KeyPair
+    KeyPairGenerator generator = KeyPairGenerator.getInstance("ML-DSA", providerName);
     generator.initialize(parameterSpec);
-    var keyPair = generator.generateKeyPair();
+    KeyPair keyPair = generator.generateKeyPair();
     var keyGenCallSite =
         keyGenSite.with(
             KEY_GENERATION_SNIPPET,
@@ -158,11 +158,11 @@ public final class BouncyCastleRunner {
     var pkcs8 = privateKey.getEncoded();
 
     var signSite = Evidence.capture();
-    // [evidence:sign] Signature ML-DSA (BC provider): initSign(privateKey), update(message), sign()
-    var signer = Signature.getInstance("ML-DSA", providerName);
+    // [evidence:sign] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initSign(PrivateKey), update(byte[]); sign() -> byte[]
+    Signature signer = Signature.getInstance("ML-DSA", providerName);
     signer.initSign(privateKey);
     signer.update(MESSAGE);
-    var signatureBytes = signer.sign();
+    byte[] signatureBytes = signer.sign();
     var signCallSite =
         signSite.with(
             SIGN_SNIPPET,
@@ -181,11 +181,11 @@ public final class BouncyCastleRunner {
                         + " bytes UTF-8)"),
                 new Argument("signature", "byte[]", signatureBytes.length + " bytes")));
     var verifySite = Evidence.capture();
-    // [evidence:verify] Signature ML-DSA (BC provider): initVerify(publicKey), update(message), verify(signature)
-    var verifier = Signature.getInstance("ML-DSA", providerName);
+    // [evidence:verify] java.security.Signature (BC provider): getInstance("ML-DSA", providerName), initVerify(PublicKey), update(byte[]); verify(byte[]) -> boolean
+    Signature verifier = Signature.getInstance("ML-DSA", providerName);
     verifier.initVerify(publicKey);
     verifier.update(MESSAGE);
-    var verified = verifier.verify(signatureBytes);
+    boolean verified = verifier.verify(signatureBytes);
     var verifyCallSite =
         verifySite.with(
             VERIFY_SNIPPET,

@@ -70,7 +70,6 @@ export type CallSiteDetail = {
 	snippet: string
 	highlightLine: number
 	arguments: ArgumentDetail[]
-	usageExample?: string | null
 }
 
 export type ArgumentDetail = {

@@ -821,7 +821,7 @@ function CodeEvidence({ callSite }: { callSite: CallSiteDetail }) {
 	const shortClassName =
 		callSite.className.split(".").pop() ?? callSite.className
 	return (
-		<details className="code-evidence">
+		<details className="code-evidence" open>
 			<summary className="code-evidence-summary">
 				<ChevronRight className="code-evidence-chevron size-3.5" />
 				<span>
@@ -830,38 +830,29 @@ function CodeEvidence({ callSite }: { callSite: CallSiteDetail }) {
 				</span>
 			</summary>
 			<div className="code-evidence-body">
-				{callSite.usageExample && (
-					<section
-						className="usage-example"
-						aria-label="Copyable usage example"
-					>
-						<div className="usage-example-title">Copyable usage example</div>
-						<pre className="usage-example-code">
-							<code>{callSite.usageExample.trim()}</code>
-						</pre>
-					</section>
-				)}
 				<section
 					className="code-block"
 					aria-label={`Source around ${callSite.sourceFile}:${callSite.lineNumber}`}
 				>
-					{lines.map((entry) => (
-						<div
-							className={
-								entry.number === callSite.lineNumber
-									? "code-line code-line-highlight"
-									: "code-line"
-							}
-							key={entry.number}
-						>
-							<span className="code-line-number">{entry.number}</span>
-							<code>{entry.line || " "}</code>
-						</div>
-					))}
+					{lines.map((entry) => {
+						const classNames = ["code-line"]
+						if (entry.number === callSite.lineNumber) {
+							classNames.push("code-line-highlight")
+						}
+						if (entry.line.trimStart().startsWith("//")) {
+							classNames.push("code-line-comment")
+						}
+						return (
+							<div className={classNames.join(" ")} key={entry.number}>
+								<span className="code-line-number">{entry.number}</span>
+								<code>{entry.line || " "}</code>
+							</div>
+						)
+					})}
 				</section>
 				{callSite.arguments.length > 0 && (
 					<div className="code-args">
-						<div className="code-args-title">Arguments passed</div>
+						<div className="code-args-title">Arguments and results</div>
 						{callSite.arguments.map((argument) => (
 							<div className="code-arg" key={argument.name}>
 								<span className="code-arg-name">{argument.name}</span>
